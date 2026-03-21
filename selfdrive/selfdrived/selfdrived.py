@@ -89,7 +89,12 @@ class SelfdriveD(CruiseHelper):
     # TODO: de-couple selfdrived with card/conflate on carState without introducing controls mismatches
     self.car_state_sock = messaging.sub_sock('carState', timeout=20)
 
-    ignore = self.sensor_packets + self.gps_packets + ['alertDebug'] + ['modelDataV2SP']
+    # Services that need extra time to initialize during startup
+    # These are excluded from alive/freq checks until selfdrived is fully initialized
+    startup_init_services = ['modelV2', 'liveCalibration', 'driverMonitoringState', 'longitudinalPlan',
+                             'livePose', 'liveDelay', 'liveParameters', 'radarState', 'liveTorqueParameters']
+
+    ignore = self.sensor_packets + self.gps_packets + ['alertDebug'] + ['modelDataV2SP'] + startup_init_services
     if SIMULATION:
       ignore += ['driverCameraState', 'managerState']
     if REPLAY:
@@ -475,6 +480,17 @@ class SelfdriveD(CruiseHelper):
         if VisionStreamType.VISION_STREAM_WIDE_ROAD not in available_streams:
           self.sm.ignore_alive.append('wideRoadCameraState')
           self.sm.ignore_valid.append('wideRoadCameraState')
+
+        # Remove startup initialization services from ignore lists now that system is ready
+        startup_init_services = ['modelV2', 'liveCalibration', 'driverMonitoringState', 'longitudinalPlan',
+                                 'livePose', 'liveDelay', 'liveParameters', 'radarState', 'liveTorqueParameters']
+        for s in startup_init_services:
+          if s in self.sm.ignore_alive:
+            self.sm.ignore_alive.remove(s)
+          if s in self.sm.ignore_avg_freq:
+            self.sm.ignore_avg_freq.remove(s)
+          if s in self.sm.ignore_valid:
+            self.sm.ignore_valid.remove(s)
 
         if REPLAY and any(ps.controlsAllowed for ps in self.sm['pandaStates']):
           self.state_machine.state = State.enabled
