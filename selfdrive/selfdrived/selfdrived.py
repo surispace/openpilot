@@ -487,8 +487,8 @@ class SelfdriveD(CruiseHelper):
         for s in startup_init_services:
           if s in self.sm.ignore_alive:
             self.sm.ignore_alive.remove(s)
-          if s in self.sm.ignore_avg_freq:
-            self.sm.ignore_avg_freq.remove(s)
+          if s in self.sm.ignore_average_freq:
+            self.sm.ignore_average_freq.remove(s)
           if s in self.sm.ignore_valid:
             self.sm.ignore_valid.remove(s)
 
