@@ -132,6 +132,14 @@ class SelfdriveD(CruiseHelper):
     self.logged_comm_issue = None
     self.not_running_prev = None
     self.experimental_mode = False
+    # Comm issue retry mechanism - require consecutive failures before alerting
+    # Each update_events() call gets fresh data from sm.update() in data_sample()
+    self.comm_issue_consecutive_failures = 0
+    self.comm_issue_first_failure_time = 0
+    self.comm_issue_active = False  # Track if alert is currently active (for hysteresis)
+    self.COMM_ISSUE_RETRY_COUNT = 10  # ~100ms at 100Hz, combined with cooldown = 2 sec
+    self.COMM_ISSUE_COOLDOWN_SECONDS = 2.0  # Minimum time before showing alert
+    self.COMM_ISSUE_CLEAR_COUNT = 5  # Consecutive good checks to clear active alert
     self.personality = get_sanitize_int_param(
       "LongitudinalPersonality",
       min(log.LongitudinalPersonality.schema.enumerants.values()),
@@ -366,24 +374,55 @@ class SelfdriveD(CruiseHelper):
     # generic catch-all. ideally, a more specific event should be added above instead
     has_disable_events = self.events.contains(ET.NO_ENTRY) and (self.events.contains(ET.SOFT_DISABLE) or self.events.contains(ET.IMMEDIATE_DISABLE))
     no_system_errors = (not has_disable_events) or (len(self.events) == num_events)
-    if not self.sm.all_checks() and no_system_errors:
-      if not self.sm.all_alive():
-        self.events.add(EventName.commIssue)
-      elif not self.sm.all_freq_ok():
-        self.events.add(EventName.commIssueAvgFreq)
-      else:
-        self.events.add(EventName.commIssue)
 
-      logs = {
-        'invalid': [s for s, valid in self.sm.valid.items() if not valid],
-        'not_alive': [s for s, alive in self.sm.alive.items() if not alive],
-        'not_freq_ok': [s for s, freq_ok in self.sm.freq_ok.items() if not freq_ok],
-      }
-      if logs != self.logged_comm_issue:
-        cloudlog.event("commIssue", error=True, **logs)
-        self.logged_comm_issue = logs
+    # Check for communication issues with retry/cooldown mechanism and hysteresis
+    comm_issue_detected = not self.sm.all_checks() and no_system_errors
+    current_time = time.monotonic()
+
+    if comm_issue_detected:
+      # Track consecutive failures
+      if self.comm_issue_consecutive_failures == 0:
+        self.comm_issue_first_failure_time = current_time
+
+      self.comm_issue_consecutive_failures += 1
+
+      # Only show alert after meeting retry count AND cooldown period
+      elapsed_time = current_time - self.comm_issue_first_failure_time
+      should_show_alert = (self.comm_issue_consecutive_failures >= self.COMM_ISSUE_RETRY_COUNT and
+                          elapsed_time >= self.COMM_ISSUE_COOLDOWN_SECONDS)
+
+      if should_show_alert:
+        self.comm_issue_active = True
+
+        if not self.sm.all_alive():
+          self.events.add(EventName.commIssue)
+        elif not self.sm.all_freq_ok():
+          self.events.add(EventName.commIssueAvgFreq)
+        else:
+          self.events.add(EventName.commIssue)
+
+        logs = {
+          'invalid': [s for s, valid in self.sm.valid.items() if not valid],
+          'not_alive': [s for s, alive in self.sm.alive.items() if not alive],
+          'not_freq_ok': [s for s, freq_ok in self.sm.freq_ok.items() if not freq_ok],
+        }
+        if logs != self.logged_comm_issue:
+          cloudlog.event("commIssue", error=True, **logs)
+          self.logged_comm_issue = logs
     else:
+      # Reset counters when checks pass
+      self.comm_issue_consecutive_failures = 0
+      self.comm_issue_first_failure_time = 0
       self.logged_comm_issue = None
+
+      # Hysteresis: only clear alert after consecutive good checks
+      if self.comm_issue_active:
+        self.comm_issue_good_checks = getattr(self, 'comm_issue_good_checks', 0) + 1
+        if self.comm_issue_good_checks >= self.COMM_ISSUE_CLEAR_COUNT:
+          self.comm_issue_active = False
+          self.comm_issue_good_checks = 0
+      else:
+        self.comm_issue_good_checks = 0
 
     if not self.CP.notCar:
       if not self.sm['livePose'].posenetOK:
