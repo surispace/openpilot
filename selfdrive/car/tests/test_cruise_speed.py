@@ -151,3 +151,46 @@ class TestVCruiseHelper:
           self.enable(float(v_ego), experimental_mode, dynamic_experimental_control)
           assert V_CRUISE_INITIAL <= self.v_cruise_helper.v_cruise_kph <= V_CRUISE_MAX
           assert self.v_cruise_helper.v_cruise_initialized
+
+  def test_initialize_v_cruise_honda_nidec(self):
+    """
+    Honda Nidec has pcmCruise=True but openpilotLongitudinalControl=True,
+    so it should still initialize v_cruise (unlike true PCM cruise cars).
+    """
+    CP = car.CarParams(pcmCruise=True, openpilotLongitudinalControl=True)
+    CP_SP = custom.CarParamsSP()
+    v_cruise_helper = VCruiseHelper(CP, CP_SP)
+
+    # Reset state
+    for _ in range(2):
+      v_cruise_helper.update_v_cruise(car.CarState(cruiseState={"available": False}), enabled=False, is_metric=False)
+
+    for experimental_mode in (True, False):
+      for dynamic_experimental_control in (True, False):
+        for v_ego in np.linspace(10, 100, 10):
+          # Reset state
+          for _ in range(2):
+            v_cruise_helper.update_v_cruise(car.CarState(cruiseState={"available": False}), enabled=False, is_metric=False)
+          assert not v_cruise_helper.v_cruise_initialized
+
+          # Simulate enabling at current speed
+          v_cruise_helper.initialize_v_cruise(car.CarState(vEgo=float(v_ego)), experimental_mode, dynamic_experimental_control)
+
+          # Should be initialized with current speed (clamped to min/max)
+          assert v_cruise_helper.v_cruise_initialized
+          assert V_CRUISE_INITIAL <= v_cruise_helper.v_cruise_kph <= V_CRUISE_MAX
+
+  def test_pcm_cruise_no_initialization(self):
+    """
+    True PCM cruise cars (without openpilot longitudinal) should skip initialization.
+    """
+    CP = car.CarParams(pcmCruise=True, openpilotLongitudinalControl=False)
+    CP_SP = custom.CarParamsSP()
+    v_cruise_helper = VCruiseHelper(CP, CP_SP)
+
+    # Try to initialize
+    v_cruise_helper.initialize_v_cruise(car.CarState(vEgo=50.0), False, False)
+
+    # Should NOT be initialized (returns early)
+    assert not v_cruise_helper.v_cruise_initialized
+    assert v_cruise_helper.v_cruise_kph == 255  # V_CRUISE_UNSET

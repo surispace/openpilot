@@ -137,7 +137,9 @@ class VCruiseHelper(VCruiseHelperSP):
 
   def initialize_v_cruise(self, CS, experimental_mode: bool, dynamic_experimental_control: bool) -> None:
     # initializing is handled by the PCM
-    if self.CP.pcmCruise:
+    # Exception: Honda Nidec has pcmCruise=True but openpilot controls longitudinal,
+    # so it still needs initialization
+    if self.CP.pcmCruise and not self.CP.openpilotLongitudinalControl:
       return
 
     initial_experimental_mode = experimental_mode and not dynamic_experimental_control
