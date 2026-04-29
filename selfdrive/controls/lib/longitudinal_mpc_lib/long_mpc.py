@@ -40,6 +40,7 @@ A_CHANGE_COST = 200.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
 LEAD_DANGER_FACTOR = 0.75
+ACC_LEAD_DANGER_FACTOR = 0.85
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
@@ -346,7 +347,7 @@ class LongitudinalMpc:
 
     # Update in ACC mode or ACC/e2e blend
     if self.mode == 'acc':
-      self.params[:,5] = LEAD_DANGER_FACTOR
+      self.params[:,5] = ACC_LEAD_DANGER_FACTOR
 
       # Fake an obstacle for cruise, this ensures smooth acceleration to set speed
       # when the leads are no factor.
@@ -357,7 +358,14 @@ class LongitudinalMpc:
                                  v_lower,
                                  v_upper)
       cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
-      x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
+      # When a lead is present, remove the cruise obstacle so the MPC only sees
+      # the lead obstacle(s). This prevents the cruise obstacle from competing
+      # with the lead and delaying braking. When no lead is present, keep the
+      # cruise obstacle for smooth acceleration to set speed.
+      if self.status:
+        x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
+      else:
+        x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
       self.source = SOURCES[np.argmin(x_obstacles[0])]
 
       # These are not used in ACC mode
@@ -401,7 +409,7 @@ class LongitudinalMpc:
 
     # Check if it got within lead comfort range
     # TODO This should be done cleaner
-    if self.mode == 'blended':
+    if self.mode in ('blended', 'acc'):
       if any((lead_0_obstacle - get_safe_obstacle_distance(self.x_sol[:,1], t_follow))- self.x_sol[:,0] < 0.0):
         self.source = 'lead0'
       if any((lead_1_obstacle - get_safe_obstacle_distance(self.x_sol[:,1], t_follow))- self.x_sol[:,0] < 0.0) and \
