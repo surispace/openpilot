@@ -24,6 +24,12 @@ CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 
+# Model braking thresholds for ACC mode (Change #1)
+# Model must request actual braking below this threshold to override MPC
+MODEL_BRAKE_THRESHOLD = -0.15  # m/s²: model accel must be negative (braking)
+# Model must brake this much harder than MPC to override (prevents accel conflict)
+MODEL_DELTA_THRESHOLD = 0.2    # m/s²: model must be at least this much lower than MPC
+
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
@@ -177,7 +183,19 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     if mode == 'acc' or not self.mlsim:
-      output_a_target = output_a_target_mpc
+      # Conditional model braking: model overrides MPC ONLY when ALL are true:
+      #   1. A valid lead is present (self.mpc.status)
+      #   2. Model is requesting actual braking (below MODEL_BRAKE_THRESHOLD)
+      #   3. Model braking is significantly stronger than MPC (delta exceeds MODEL_DELTA_THRESHOLD)
+      # This prevents the model from weakening ACC acceleration when both are positive,
+      # while still enabling earlier braking from experimental mode when a lead is near.
+      use_model_braking = (self.mpc.status and
+                           output_a_target_e2e < MODEL_BRAKE_THRESHOLD and
+                           output_a_target_e2e < output_a_target_mpc - MODEL_DELTA_THRESHOLD)
+      if use_model_braking:
+        output_a_target = output_a_target_e2e
+      else:
+        output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
     else:
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
