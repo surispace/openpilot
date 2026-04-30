@@ -249,6 +249,7 @@ class LongitudinalMpc:
       self.solver.set(i, 'x', np.zeros(X_DIM))
     self.last_cloudlog_t = 0
     self.status = False
+    self.lead_relevant = False
     self.crash_cnt = 0.0
     self.solution_status = 0
     # timers
@@ -358,11 +359,24 @@ class LongitudinalMpc:
                                  v_lower,
                                  v_upper)
       cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
-      # When a lead is present, remove the cruise obstacle so the MPC only sees
-      # the lead obstacle(s). This prevents the cruise obstacle from competing
-      # with the lead and delaying braking. When no lead is present, keep the
-      # cruise obstacle for smooth acceleration to set speed.
-      if self.status:
+      # Determine if either lead is braking-relevant:
+      #   - Lead is valid (status = True)
+      #   - Lead is slower than ego (v_rel > 0, ego is closing distance)
+      #   - Lead is within braking-relevant range (TTC < 10s OR within 10m)
+      # When a lead is braking-relevant, remove the cruise obstacle so the MPC
+      # focuses on the lead for earlier braking. Otherwise keep cruise obstacle
+      # for smooth acceleration and cruise speed protection.
+      def _lead_relevant(lead):
+        if lead is None or not lead.status:
+          return False
+        v_rel = v_ego - lead.vLead
+        if v_rel <= 0:
+          return False
+        ttc = lead.dRel / v_rel
+        return ttc < 10.0 or lead.dRel < 10.0
+
+      self.lead_relevant = _lead_relevant(radarstate.leadOne) or _lead_relevant(radarstate.leadTwo)
+      if self.lead_relevant:
         x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
       else:
         x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])

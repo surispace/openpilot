@@ -24,12 +24,6 @@ CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 
-# Model braking thresholds for ACC mode (Change #1)
-# Model must request actual braking below this threshold to override MPC
-MODEL_BRAKE_THRESHOLD = -0.15  # m/s²: model accel must be negative (braking)
-# Model must brake this much harder than MPC to override (prevents accel conflict)
-MODEL_DELTA_THRESHOLD = 0.2    # m/s²: model must be at least this much lower than MPC
-
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
@@ -184,14 +178,32 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     if mode == 'acc' or not self.mlsim:
       # Conditional model braking: model overrides MPC ONLY when ALL are true:
-      #   1. A valid lead is present (self.mpc.status)
-      #   2. Model is requesting actual braking (below MODEL_BRAKE_THRESHOLD)
-      #   3. Model braking is significantly stronger than MPC (delta exceeds MODEL_DELTA_THRESHOLD)
-      # This prevents the model from weakening ACC acceleration when both are positive,
-      # while still enabling earlier braking from experimental mode when a lead is near.
-      use_model_braking = (self.mpc.status and
-                           output_a_target_e2e < MODEL_BRAKE_THRESHOLD and
-                           output_a_target_e2e < output_a_target_mpc - MODEL_DELTA_THRESHOLD)
+      #   1. A braking-relevant lead is present (self.mpc.lead_relevant)
+      #   2. Model is not requesting positive acceleration (coasting or braking)
+      #   3. Model requests less acceleration than MPC (more braking/coasting)
+      #   4. Not resuming from stop with lead pulling away (preserve acceleration)
+      # This allows gentle model decel/coasting for earlier braking when a lead
+      # is present, while preserving ACC acceleration when the model wants to go.
+      lead_present = self.mpc.lead_relevant
+      model_is_not_accelerating = output_a_target_e2e <= 0.0
+      model_requests_less_accel = output_a_target_e2e < output_a_target_mpc
+
+      # Don't let model braking override acceleration when resuming from a stop
+      # and the lead is pulling away (vLead > v_ego). Exception: lead is stopped
+      # or very close — then braking still takes priority.
+      v_ego = sm['carState'].vEgo
+      lead_moving_away = (
+          (sm['radarState'].leadOne.status and sm['radarState'].leadOne.vLead > v_ego) or
+          (sm['radarState'].leadTwo.status and sm['radarState'].leadTwo.vLead > v_ego)
+      )
+      resuming_from_stop = v_ego < MIN_ALLOW_THROTTLE_SPEED and lead_moving_away
+
+      use_model_braking = (
+          lead_present
+          and model_is_not_accelerating
+          and model_requests_less_accel
+          and not resuming_from_stop
+      )
       if use_model_braking:
         output_a_target = output_a_target_e2e
       else:
