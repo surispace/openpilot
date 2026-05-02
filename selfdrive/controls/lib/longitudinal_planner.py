@@ -66,6 +66,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
     self.output_should_stop = False
+    self.model_stop_confidence = 0.0
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -198,17 +199,37 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       )
       resuming_from_stop = v_ego < MIN_ALLOW_THROTTLE_SPEED and lead_moving_away
 
+      # Model stop scenario detection: model predicts a stop (red light, stop sign)
+      # with no radar lead as the cause. This is a vision-only stop.
+      # Two triggers, either of which ramps confidence:
+      #   1. shouldStop=True — model predicts stop within ~1.0-2.0s (late but certain)
+      #   2. desiredAccel < -1.5 — model wants to brake meaningfully (early signal)
+      # Confidence gate prevents false positives from momentary model uncertainty.
+      # Gated by StopLightControl param for user control.
+      model_wants_to_brake = output_a_target_e2e < -1.5
+      if (self.stop_light_control_enabled and (output_should_stop_e2e or model_wants_to_brake)
+          and not lead_present and v_ego > MIN_ALLOW_THROTTLE_SPEED):
+        self.model_stop_confidence = min(1.0, self.model_stop_confidence + self.dt * 2.0)
+      else:
+        self.model_stop_confidence = max(0.0, self.model_stop_confidence - self.dt * 3.0)
+      model_stop_scenario = self.model_stop_confidence > 0.6
+
       use_model_braking = (
           lead_present
           and model_is_not_accelerating
           and model_requests_less_accel
           and not resuming_from_stop
       )
-      if use_model_braking:
+      if model_stop_scenario:
+        # Model sees a stop light/sign with no lead — use model signals directly
         output_a_target = output_a_target_e2e
+        self.output_should_stop = output_should_stop_e2e
+      elif use_model_braking:
+        output_a_target = output_a_target_e2e
+        self.output_should_stop = output_should_stop_mpc
       else:
         output_a_target = output_a_target_mpc
-      self.output_should_stop = output_should_stop_mpc
+        self.output_should_stop = output_should_stop_mpc
     else:
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
