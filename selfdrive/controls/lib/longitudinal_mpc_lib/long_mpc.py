@@ -40,7 +40,7 @@ A_CHANGE_COST = 200.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
 LEAD_DANGER_FACTOR = 0.75
-ACC_LEAD_DANGER_FACTOR = 0.85
+ACC_LEAD_DANGER_FACTOR = 0.90
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
@@ -373,7 +373,7 @@ class LongitudinalMpc:
         if v_rel <= 0:
           return False
         ttc = lead.dRel / v_rel
-        return ttc < 10.0 or lead.dRel < 10.0
+        return ttc < 12.0 or lead.dRel < 10.0
 
       self.lead_relevant = _lead_relevant(radarstate.leadOne) or _lead_relevant(radarstate.leadTwo)
       if self.lead_relevant:
