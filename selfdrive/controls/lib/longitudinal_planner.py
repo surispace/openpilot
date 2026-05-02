@@ -205,10 +205,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       #   1. shouldStop=True — model predicts stop within ~1.0-2.0s (late but certain)
       #   2. desiredAccel < -1.5 — model wants to brake meaningfully (early signal)
       # Confidence gate prevents false positives from momentary model uncertainty.
-      # Gated by StopLightControl param for user control.
       model_wants_to_brake = output_a_target_e2e < -1.5
-      if (self.stop_light_control_enabled and (output_should_stop_e2e or model_wants_to_brake)
-          and not lead_present and v_ego > MIN_ALLOW_THROTTLE_SPEED):
+      if (output_should_stop_e2e or model_wants_to_brake) and not lead_present and v_ego > MIN_ALLOW_THROTTLE_SPEED:
         self.model_stop_confidence = min(1.0, self.model_stop_confidence + self.dt * 2.0)
       else:
         self.model_stop_confidence = max(0.0, self.model_stop_confidence - self.dt * 3.0)
