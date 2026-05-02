@@ -8,7 +8,10 @@ See the LICENSE.md file in the root directory for more details.
 from cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
+from openpilot.common.params import Params
+from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
+from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
@@ -32,9 +35,13 @@ class LongitudinalPlannerSP:
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
+    self._params = Params()
+    self._frame = 0
 
     self.output_v_target = 0.
     self.output_a_target = 0.
+
+    self._stop_light_control = self._params.get_bool("StopLightControl")
 
   @property
   def mlsim(self) -> bool:
@@ -77,10 +84,20 @@ class LongitudinalPlannerSP:
     self.output_v_target, self.output_a_target = targets[self.source]
     return self.output_v_target, self.output_a_target
 
+  def _read_params(self) -> None:
+    if self._frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
+      self._stop_light_control = self._params.get_bool("StopLightControl")
+
+  @property
+  def stop_light_control_enabled(self) -> bool:
+    return self._stop_light_control
+
   def update(self, sm: messaging.SubMaster) -> None:
+    self._read_params()
     self.events_sp.clear()
     self.dec.update(sm)
     self.e2e_alerts_helper.update(sm, self.events_sp)
+    self._frame += 1
 
   def publish_longitudinal_plan_sp(self, sm: messaging.SubMaster, pm: messaging.PubMaster) -> None:
     plan_sp_send = messaging.new_message('longitudinalPlanSP')
