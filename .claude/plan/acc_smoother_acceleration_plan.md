@@ -2,7 +2,8 @@
 
 **Branch:** `rtizi-dev`
 **Date:** 2026-05-02
-**Status:** ✅ IMPLEMENTED — Plan A applied. See commit below.
+**Last Updated:** 2026-05-04
+**Status:** ✅ IMPLEMENTED — Plan B applied (aggressive smoothing).
 
 ---
 
@@ -130,7 +131,7 @@ The MPC's cost function essentially says: "Get to the cruise obstacle as fast as
 
 ---
 
-### Plan B: Aggressive Smoothing (If Plan A Still Feels Punchy)
+### Plan B: Aggressive Smoothing (If Plan A Still Feels Punchy) — ✅ IMPLEMENTED 2026-05-04
 
 | Parameter | Current | Proposed | Change | File:Line |
 |-----------|---------|----------|--------|-----------|
@@ -141,6 +142,11 @@ The MPC's cost function essentially says: "Get to the cruise obstacle as fast as
 | `accel_clip` rate | ±0.05 | **±0.03** | −40% | [`longitudinal_planner.py:217`](selfdrive/controls/lib/longitudinal_planner.py:217) |
 
 **Expected feel:** Very smooth, luxury-car-like acceleration. Minimal jerk. May feel slightly sluggish to drivers who prefer responsive acceleration.
+
+**Implementation Notes:**
+- Applied on 2026-05-04 after user feedback that Plan A "doesn't feel smooth"
+- All parameters updated from Plan A baseline (which had intermediate values)
+- Final values: `CRUISE_MAX_ACCEL=1.0`, `A_CRUISE_MAX_VALS=[1.0,0.8,0.6,0.5]`, `A_CHANGE_COST=400`, `J_EGO_COST=10.0`, `accel_clip_rate=±0.03`
 
 ---
 
