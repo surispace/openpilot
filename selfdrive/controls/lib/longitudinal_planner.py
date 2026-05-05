@@ -67,6 +67,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.output_a_target = 0.0
     self.output_should_stop = False
     self.model_stop_confidence = 0.0
+    self.model_stop_scenario_active = False
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -205,12 +206,31 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       #   1. shouldStop=True — model predicts stop within ~1.0-2.0s (late but certain)
       #   2. desiredAccel < -1.5 — model wants to brake meaningfully (early signal)
       # Confidence gate prevents false positives from momentary model uncertainty.
+      # Speed gate (v_ego > MIN_ALLOW_THROTTLE_SPEED) only applies to the
+      # desiredAccel trigger — shouldStop is trusted at any speed.
       model_wants_to_brake = output_a_target_e2e < -1.5
-      if (output_should_stop_e2e or model_wants_to_brake) and not lead_present and v_ego > MIN_ALLOW_THROTTLE_SPEED:
+      should_stop_trigger = output_should_stop_e2e and not lead_present
+      brake_trigger = model_wants_to_brake and not lead_present and v_ego > MIN_ALLOW_THROTTLE_SPEED
+
+      if should_stop_trigger or brake_trigger:
         self.model_stop_confidence = min(1.0, self.model_stop_confidence + self.dt * 2.0)
       else:
         self.model_stop_confidence = max(0.0, self.model_stop_confidence - self.dt * 3.0)
-      model_stop_scenario = self.model_stop_confidence > 0.6
+
+      # Latch: once model_stop_scenario activates, hold it until the model
+      # explicitly signals green light (shouldStop=False AND desiredAccel >= 0).
+      # This prevents the stop from being released when:
+      #   - Car slows below MIN_ALLOW_THROTTLE_SPEED (2.5 m/s)
+      #   - desiredAccel rises above -1.5 as car approaches zero speed
+      #   - Model briefly flickers at very low speeds
+      if self.model_stop_confidence > 0.6:
+        self.model_stop_scenario_active = True
+      elif self.model_stop_scenario_active:
+        # Release only on explicit green light signal
+        green_light = not output_should_stop_e2e and output_a_target_e2e >= 0.0
+        if green_light:
+          self.model_stop_scenario_active = False
+      model_stop_scenario = self.model_stop_scenario_active
 
       use_model_braking = (
           lead_present
