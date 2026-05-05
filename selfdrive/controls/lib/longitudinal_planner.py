@@ -23,6 +23,7 @@ A_CRUISE_MAX_BP = [0., 10., 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+MODEL_BRAKE_THRESHOLD = -0.5  # m/s², model must want at least this much decel to override MPC
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
@@ -177,20 +178,27 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     if mode == 'acc' or not self.mlsim:
-      # Conditional model braking: model overrides MPC ONLY when ALL are true:
-      #   1. A braking-relevant lead is present (self.mpc.lead_relevant)
-      #   2. Model is not requesting positive acceleration (coasting or braking)
-      #   3. Model requests less acceleration than MPC (more braking/coasting)
-      #   4. Not resuming from stop with lead pulling away (preserve acceleration)
-      # This allows gentle model decel/coasting for earlier braking when a lead
-      # is present, while preserving ACC acceleration when the model wants to go.
+      # Priority-ordered output selection for ACC mode:
+      #
+      # P1: LEAD PRESENT
+      #   P1a: Lead slower/stopped → v3 braking with threshold gate
+      #        (ACC_LEAD_DANGER_FACTOR=0.90, TTC=12s in MPC; model override
+      #         only when model wants >0.5 m/s² decel)
+      #   P1b: Lead faster → Plan B smoother acceleration
+      #        (use_model_braking=False → pure MPC with A_CRUISE_MAX_VALS caps)
+      #
+      # P2: NO LEAD + NO STOP LIGHT → Plan B smoother acceleration
+      #     (model not braking → pure MPC with smoothing caps)
+      #
+      # P3: NO LEAD + STOP LIGHT → threshold-gated min(mpc, e2e)
+      #     (model braking >0.5 m/s² or shouldStop → immediate model decel)
+      #
       lead_present = self.mpc.lead_relevant
-      model_is_not_accelerating = output_a_target_e2e <= 0.0
+      model_wants_to_brake = output_a_target_e2e < MODEL_BRAKE_THRESHOLD
       model_requests_less_accel = output_a_target_e2e < output_a_target_mpc
 
       # Don't let model braking override acceleration when resuming from a stop
-      # and the lead is pulling away (vLead > v_ego). Exception: lead is stopped
-      # or very close — then braking still takes priority.
+      # and the lead is pulling away (vLead > v_ego).
       v_ego = sm['carState'].vEgo
       lead_moving_away = (
           (sm['radarState'].leadOne.status and sm['radarState'].leadOne.vLead > v_ego) or
@@ -198,11 +206,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       )
       resuming_from_stop = v_ego < MIN_ALLOW_THROTTLE_SPEED and lead_moving_away
 
-      # No-lead: model decel always available (same as blended mode behavior).
-      # With-lead: gated use_model_braking for safe lead-following (v3).
       if lead_present:
+        # P1a: Lead slower/stopped — v3 braking with threshold gate
+        # P1b: Lead faster — use_model_braking=False → pure MPC (Plan B)
         use_model_braking = (
-            model_is_not_accelerating
+            model_wants_to_brake
             and model_requests_less_accel
             and not resuming_from_stop
         )
@@ -213,8 +221,14 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
           output_a_target = output_a_target_mpc
           self.output_should_stop = output_should_stop_mpc
       else:
-        output_a_target = min(output_a_target_mpc, output_a_target_e2e)
-        self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+        # P2: No stop light → pure MPC with Plan B smoothing
+        # P3: Stop light detected → threshold-gated min(mpc, e2e)
+        if model_wants_to_brake or output_should_stop_e2e:
+          output_a_target = min(output_a_target_mpc, output_a_target_e2e)
+          self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+        else:
+          output_a_target = output_a_target_mpc
+          self.output_should_stop = output_should_stop_mpc
     else:
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
