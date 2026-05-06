@@ -1,8 +1,8 @@
 # Plan: Smoother ACC Acceleration (No Lead / Lead Faster Than Ego)
 
 **Branch:** `rtizi-dev`
-**Date:** 2026-05-02
-**Status:** ✅ IMPLEMENTED — Plan B applied. See commits below.
+**Date:** 2026-05-06
+**Status:** ✅ IMPLEMENTED — Plan A applied. See commits below.
 
 ---
 
