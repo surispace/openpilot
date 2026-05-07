@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import math
 import numpy as np
+from cereal import log
 
 import cereal.messaging as messaging
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
@@ -25,13 +26,28 @@ ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
 MODEL_BRAKE_THRESHOLD = -0.5  # m/s², model must want at least this much decel to override MPC
 
+# Personality-dependent acceleration caps (replaces hardcoded A_CRUISE_MAX_VALS)
+A_CRUISE_MAX_VALS_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: [1.6, 1.2, 0.8, 0.6],
+  log.LongitudinalPersonality.standard:   [1.2, 1.0, 0.7, 0.5],
+  log.LongitudinalPersonality.relaxed:    [0.9, 0.7, 0.5, 0.4],
+}
+
+# Personality-dependent accel clip rate (replaces hardcoded ±0.03)
+ACCEL_CLIP_RATE_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: 0.05,
+  log.LongitudinalPersonality.standard:   0.03,
+  log.LongitudinalPersonality.relaxed:    0.02,
+}
+
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
 
-def get_max_accel(v_ego):
-  return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+def get_max_accel(v_ego, personality=log.LongitudinalPersonality.standard):
+  a_cruise_max_vals = A_CRUISE_MAX_VALS_BY_PERSONALITY.get(personality, A_CRUISE_MAX_VALS)
+  return np.interp(v_ego, A_CRUISE_MAX_BP, a_cruise_max_vals)
 
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
@@ -125,7 +141,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
     if mode == 'acc':
-      accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+      personality = sm['selfdriveState'].personality
+      accel_clip = [ACCEL_MIN, get_max_accel(v_ego, personality)]
       steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
       accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
     else:
@@ -233,8 +250,9 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       output_a_target = min(output_a_target_mpc, output_a_target_e2e)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
 
+    accel_clip_rate = ACCEL_CLIP_RATE_BY_PERSONALITY.get(personality, 0.03)
     for idx in range(2):
-      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.03, self.prev_accel_clip[idx] + 0.03)
+      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - accel_clip_rate, self.prev_accel_clip[idx] + accel_clip_rate)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 
