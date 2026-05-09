@@ -36,11 +36,12 @@ X_EGO_OBSTACLE_COST = 3.
 X_EGO_COST = 0.
 V_EGO_COST = 0.
 A_EGO_COST = 0.
-J_EGO_COST = 5.
-A_CHANGE_COST = 200.
+J_EGO_COST = 8.0
+A_CHANGE_COST = 300.
 DANGER_ZONE_COST = 100.
 CRASH_DISTANCE = .25
 LEAD_DANGER_FACTOR = 0.75
+ACC_LEAD_DANGER_FACTOR = 0.90
 LIMIT_COST = 1e6
 ACADOS_SOLVER_TYPE = 'SQP_RTI'
 
@@ -56,12 +57,37 @@ T_DIFFS = np.diff(T_IDXS, prepend=[0.])
 COMFORT_BRAKE = 2.5
 STOP_DISTANCE = 6.0
 CRUISE_MIN_ACCEL = -1.2
-CRUISE_MAX_ACCEL = 1.6
+CRUISE_MAX_ACCEL = 1.2
 MIN_X_LEAD_FACTOR = 0.5
+
+# Personality-dependent parameter lookup tables
+CRUISE_MAX_ACCEL_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: 1.6,
+  log.LongitudinalPersonality.standard:   1.2,
+  log.LongitudinalPersonality.relaxed:    0.9,
+}
+
+TTC_THRESHOLD_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: 10.0,
+  log.LongitudinalPersonality.standard:   12.0,
+  log.LongitudinalPersonality.relaxed:    14.0,
+}
+
+ACC_LEAD_DANGER_FACTOR_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: 0.85,
+  log.LongitudinalPersonality.standard:   0.90,
+  log.LongitudinalPersonality.relaxed:    0.95,
+}
+
+COMFORT_BRAKE_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: 2.8,
+  log.LongitudinalPersonality.standard:   2.5,
+  log.LongitudinalPersonality.relaxed:    2.2,
+}
 
 def get_jerk_factor(personality=log.LongitudinalPersonality.standard):
   if personality==log.LongitudinalPersonality.relaxed:
-    return 1.0
+    return 1.5
   elif personality==log.LongitudinalPersonality.standard:
     return 1.0
   elif personality==log.LongitudinalPersonality.aggressive:
@@ -80,11 +106,13 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 
-def get_stopped_equivalence_factor(v_lead):
-  return (v_lead**2) / (2 * COMFORT_BRAKE)
+def get_stopped_equivalence_factor(v_lead, personality=log.LongitudinalPersonality.standard):
+  comfort_brake = COMFORT_BRAKE_BY_PERSONALITY.get(personality, COMFORT_BRAKE)
+  return (v_lead**2) / (2 * comfort_brake)
 
-def get_safe_obstacle_distance(v_ego, t_follow):
-  return (v_ego**2) / (2 * COMFORT_BRAKE) + t_follow * v_ego + STOP_DISTANCE
+def get_safe_obstacle_distance(v_ego, t_follow, personality=log.LongitudinalPersonality.standard):
+  comfort_brake = COMFORT_BRAKE_BY_PERSONALITY.get(personality, COMFORT_BRAKE)
+  return (v_ego**2) / (2 * comfort_brake) + t_follow * v_ego + STOP_DISTANCE
 
 def gen_long_model():
   model = AcadosModel()
@@ -241,6 +269,7 @@ class LongitudinalMpc:
 
     self.last_cloudlog_t = 0
     self.status = False
+    self.lead_relevant = False
     self.crash_cnt = 0.0
     self.solution_status = 0
     # timers
@@ -324,18 +353,39 @@ class LongitudinalMpc:
     # To estimate a safe distance from a moving lead, we calculate how much stopping
     # distance that lead needs as a minimum. We can add that to the current distance
     # and then treat that as a stopped car/obstacle at this new distance.
-    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1])
-    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1])
+    lead_0_obstacle = lead_xv_0[:,0] + get_stopped_equivalence_factor(lead_xv_0[:,1], personality)
+    lead_1_obstacle = lead_xv_1[:,0] + get_stopped_equivalence_factor(lead_xv_1[:,1], personality)
 
     # Fake an obstacle for cruise, this ensures smooth acceleration to set speed
     # when the leads are no factor.
+    cruise_max_accel = CRUISE_MAX_ACCEL_BY_PERSONALITY.get(personality, CRUISE_MAX_ACCEL)
     v_lower = v_ego + (T_IDXS * CRUISE_MIN_ACCEL * 1.05)
     # TODO does this make sense when max_a is negative?
-    v_upper = v_ego + (T_IDXS * CRUISE_MAX_ACCEL * 1.05)
+    v_upper = v_ego + (T_IDXS * cruise_max_accel * 1.05)
     v_cruise_clipped = np.clip(v_cruise * np.ones(N+1), v_lower, v_upper)
-    cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow)
+    cruise_obstacle = np.cumsum(T_DIFFS * v_cruise_clipped) + get_safe_obstacle_distance(v_cruise_clipped, t_follow, personality)
+    # Determine if either lead is braking-relevant:
+    #   - Lead is valid (status = True)
+    #   - Lead is slower than ego (v_rel > 0, ego is closing distance)
+    #   - Lead is within braking-relevant range (TTC < threshold OR within 10m)
+    # When a lead is braking-relevant, remove the cruise obstacle so the MPC
+    # focuses on the lead for earlier braking. Otherwise keep cruise obstacle
+    # for smooth acceleration and cruise speed protection.
+    ttc_threshold = TTC_THRESHOLD_BY_PERSONALITY.get(personality, 12.0)
+    def _lead_relevant(lead):
+      if lead is None or not lead.status:
+        return False
+      v_rel = v_ego - lead.vLead
+      if v_rel <= 0:
+        return False
+      ttc = lead.dRel / v_rel
+      return ttc < ttc_threshold or lead.dRel < 10.0
 
-    x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
+    self.lead_relevant = _lead_relevant(radarstate.leadOne) or _lead_relevant(radarstate.leadTwo)
+    if self.lead_relevant:
+      x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle])
+    else:
+      x_obstacles = np.column_stack([lead_0_obstacle, lead_1_obstacle, cruise_obstacle])
     self.source = MPC_SOURCES[np.argmin(x_obstacles[0])]
 
     self.yref[:,:] = 0.0
@@ -348,7 +398,7 @@ class LongitudinalMpc:
     self.params[:,2] = np.min(x_obstacles, axis=1)
     self.params[:,3] = np.copy(self.a_prev)
     self.params[:,4] = t_follow
-    self.params[:,5] = LEAD_DANGER_FACTOR
+    self.params[:,5] = ACC_LEAD_DANGER_FACTOR_BY_PERSONALITY.get(personality, ACC_LEAD_DANGER_FACTOR)
 
     self.run()
     if (np.any(lead_xv_0[FCW_IDXS,0] - self.x_sol[FCW_IDXS,0] < CRASH_DISTANCE) and

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import math
 import numpy as np
+from cereal import log
 
 import cereal.messaging as messaging
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
@@ -17,18 +18,34 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
-A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
-A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+A_CRUISE_MAX_VALS = [1.2, 1.0, 0.7, 0.5]
+A_CRUISE_MAX_BP = [0., 10., 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
+MODEL_BRAKE_THRESHOLD = -0.5  # m/s², model must want at least this much decel to override MPC
+
+# Personality-dependent acceleration caps (replaces hardcoded A_CRUISE_MAX_VALS)
+A_CRUISE_MAX_VALS_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: [1.6, 1.2, 0.8, 0.6],
+  log.LongitudinalPersonality.standard:   [1.2, 1.0, 0.7, 0.5],
+  log.LongitudinalPersonality.relaxed:    [0.9, 0.7, 0.5, 0.4],
+}
+
+# Personality-dependent accel clip rate (replaces hardcoded ±0.03)
+ACCEL_CLIP_RATE_BY_PERSONALITY = {
+  log.LongitudinalPersonality.aggressive: 0.05,
+  log.LongitudinalPersonality.standard:   0.03,
+  log.LongitudinalPersonality.relaxed:    0.02,
+}
 
 # Lookup table for turns
 _A_TOTAL_MAX_V = [1.7, 3.2]
 _A_TOTAL_MAX_BP = [20., 40.]
 
-def get_max_accel(v_ego):
-  return np.interp(v_ego, A_CRUISE_MAX_BP, A_CRUISE_MAX_VALS)
+def get_max_accel(v_ego, personality=log.LongitudinalPersonality.standard):
+  a_cruise_max_vals = A_CRUISE_MAX_VALS_BY_PERSONALITY.get(personality, A_CRUISE_MAX_VALS)
+  return np.interp(v_ego, A_CRUISE_MAX_BP, a_cruise_max_vals)
 
 def get_coast_accel(pitch):
   return np.sin(pitch) * -5.65 - 0.3  # fitted from data using xx/projects/allow_throttle/compute_coast_accel.py
@@ -110,7 +127,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # No change cost when user is controlling the speed, or when standstill
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
-    accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+    personality = sm['selfdriveState'].personality
+    accel_clip = [ACCEL_MIN, get_max_accel(v_ego, personality)]
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
     accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
 
@@ -161,16 +179,67 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     output_should_stop_e2e = sm['modelV2'].action.shouldStop
 
     if self.is_e2e(sm):
+      # Blended mode: unchanged — min(mpc, e2e)
       output_a_target = min(output_a_target_e2e, output_a_target_mpc)
       self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
       if output_a_target < output_a_target_mpc:
         self.mpc.source = LongitudinalPlanSource.e2e
     else:
-      output_a_target = output_a_target_mpc
-      self.output_should_stop = output_should_stop_mpc
+      # ACC mode: P1/P2/P3 priority-ordered output selection
+      #
+      # P1: LEAD PRESENT
+      #   P1a: Lead slower/stopped → v3 braking with threshold gate
+      #        (ACC_LEAD_DANGER_FACTOR=0.90, TTC=12s in MPC; model override
+      #         only when model wants >0.5 m/s² decel)
+      #   P1b: Lead faster → Plan B smoother acceleration
+      #        (use_model_braking=False → pure MPC with A_CRUISE_MAX_VALS caps)
+      #
+      # P2: NO LEAD + NO STOP LIGHT → Plan B smoother acceleration
+      #     (model not braking → pure MPC with smoothing caps)
+      #
+      # P3: NO LEAD + STOP LIGHT → threshold-gated min(mpc, e2e)
+      #     (model braking >0.5 m/s² or shouldStop → immediate model decel)
+      #
+      lead_present = self.mpc.lead_relevant
+      model_wants_to_brake = output_a_target_e2e < MODEL_BRAKE_THRESHOLD
+      model_requests_less_accel = output_a_target_e2e < output_a_target_mpc
 
+      # Don't let model braking override acceleration when resuming from a stop
+      # and the lead is pulling away (vLead > v_ego).
+      v_ego = sm['carState'].vEgo
+      lead_moving_away = (
+          (sm['radarState'].leadOne.status and sm['radarState'].leadOne.vLead > v_ego) or
+          (sm['radarState'].leadTwo.status and sm['radarState'].leadTwo.vLead > v_ego)
+      )
+      resuming_from_stop = v_ego < MIN_ALLOW_THROTTLE_SPEED and lead_moving_away
+
+      if lead_present:
+        # P1a: Lead slower/stopped — v3 braking with threshold gate
+        # P1b: Lead faster — use_model_braking=False → pure MPC (Plan B)
+        use_model_braking = (
+            model_wants_to_brake
+            and model_requests_less_accel
+            and not resuming_from_stop
+        )
+        if use_model_braking:
+          output_a_target = output_a_target_e2e
+          self.output_should_stop = output_should_stop_mpc
+        else:
+          output_a_target = output_a_target_mpc
+          self.output_should_stop = output_should_stop_mpc
+      else:
+        # P2: No stop light → pure MPC with Plan B smoothing
+        # P3: Stop light detected → threshold-gated min(mpc, e2e)
+        if model_wants_to_brake or output_should_stop_e2e:
+          output_a_target = min(output_a_target_mpc, output_a_target_e2e)
+          self.output_should_stop = output_should_stop_e2e or output_should_stop_mpc
+        else:
+          output_a_target = output_a_target_mpc
+          self.output_should_stop = output_should_stop_mpc
+
+    accel_clip_rate = ACCEL_CLIP_RATE_BY_PERSONALITY.get(personality, 0.03)
     for idx in range(2):
-      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
+      accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - accel_clip_rate, self.prev_accel_clip[idx] + accel_clip_rate)
     self.output_a_target = np.clip(output_a_target, accel_clip[0], accel_clip[1])
     self.prev_accel_clip = accel_clip
 
