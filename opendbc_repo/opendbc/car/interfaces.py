@@ -244,7 +244,7 @@ class CarInterfaceBase(ABC, CarInterfaceBaseSP):
     ret.minEnableSpeed = -1. # enable is done by stock ACC, so ignore this
     ret.steerRatioRear = 0.  # no rear steering, at least on the listed cars aboveA
     ret.openpilotLongitudinalControl = False
-    ret.stopAccel = -2.0
+    ret.stopAccel = -1.0 # reducing this from -2.0 to -1.0 for honda pilot to eliminate brake noise
     ret.stoppingDecelRate = 0.8 # brake_travel/s while trying to stop
     ret.vEgoStopping = 0.5
     ret.vEgoStarting = 0.5
