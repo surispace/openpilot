@@ -163,8 +163,9 @@ class ModularAssistiveDrivingSystem:
       if be.type == ButtonType.cancel:
         if not self.selfdrive.enabled and self.selfdrive.enabled_prev:
           self.events_sp.add(EventNameSP.manualLongitudinalRequired)
-      if be.type == ButtonType.lkas and be.pressed and (CS.cruiseState.available or self.allow_always):
+      if be.type == ButtonType.lkas and be.pressed:
         if self.enabled:
+          # MADS is enabled: LKAS always works to toggle AOL or disable MADS
           if self.selfdrive.enabled:
             self.events_sp.add(EventNameSP.manualSteeringRequired)
           else:
@@ -175,7 +176,8 @@ class ModularAssistiveDrivingSystem:
               self.events_sp.add(EventNameSP.lkasEnable)
             else:
               self.events_sp.add(EventNameSP.lkasDisable)
-        else:
+        elif CS.cruiseState.available or self.allow_always:
+          # MADS is disabled: only allow enabling if cruise is available
           self.events_sp.add(EventNameSP.lkasEnable)
 
     if not CS.cruiseState.available and not self.no_main_cruise:
