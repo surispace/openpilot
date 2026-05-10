@@ -56,6 +56,10 @@ class ModularAssistiveDrivingSystem:
     self.steering_mode_on_brake = read_steering_mode_param(self.CP, self.CP_SP, self.params)
     self.unified_engagement_mode = self.params.get_bool("MadsUnifiedEngagementMode")
 
+    # Always On Lateral: auto-engage lateral when MADS is active and system is initialized
+    # Set to True by default so AOL is active on engine start. Press LKAS button to toggle off.
+    self.always_on_lateral = True
+
   def read_params(self):
     self.main_enabled_toggle = self.params.get_bool("MadsMainCruiseAllowed")
     self.unified_engagement_mode = self.params.get_bool("MadsUnifiedEngagementMode")
@@ -150,8 +154,9 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
     else:
-      if self.main_enabled_toggle:
-        if CS.cruiseState.available and self.selfdrive.CS_prev.cruiseState.available:
+      # Always On Lateral: auto-engage lateral when MADS is active and system is initialized
+      if self.main_enabled_toggle and self.always_on_lateral:
+        if self.selfdrive.initialized:
           self.events_sp.add(EventNameSP.lkasEnable)
 
     for be in CS.buttonEvents:
@@ -163,7 +168,13 @@ class ModularAssistiveDrivingSystem:
           if self.selfdrive.enabled:
             self.events_sp.add(EventNameSP.manualSteeringRequired)
           else:
-            self.events_sp.add(EventNameSP.lkasDisable)
+            # MADS is enabled but openpilot longitudinal is not engaged:
+            # toggle Always On Lateral on/off instead of disabling MADS
+            self.always_on_lateral = not self.always_on_lateral
+            if self.always_on_lateral:
+              self.events_sp.add(EventNameSP.lkasEnable)
+            else:
+              self.events_sp.add(EventNameSP.lkasDisable)
         else:
           self.events_sp.add(EventNameSP.lkasEnable)
 
