@@ -153,11 +153,6 @@ class ModularAssistiveDrivingSystem:
       if self.block_unified_engagement_mode():
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
-    else:
-      # Always On Lateral: auto-engage lateral when MADS is active and system is initialized
-      if self.main_enabled_toggle and self.always_on_lateral:
-        if self.selfdrive.initialized:
-          self.events_sp.add(EventNameSP.lkasEnable)
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
@@ -178,6 +173,13 @@ class ModularAssistiveDrivingSystem:
               self.events_sp.add(EventNameSP.lkasDisable)
         elif CS.cruiseState.available or self.allow_always:
           # MADS is disabled: only allow enabling if cruise is available
+          self.events_sp.add(EventNameSP.lkasEnable)
+
+    # Always On Lateral: auto-engage lateral when MADS is active and system is initialized
+    # Must run AFTER LKAS button handler so toggle takes effect first
+    if not selfdrive_enable_events:
+      if self.main_enabled_toggle and self.always_on_lateral:
+        if self.selfdrive.initialized:
           self.events_sp.add(EventNameSP.lkasEnable)
 
     if not CS.cruiseState.available and not self.no_main_cruise:
