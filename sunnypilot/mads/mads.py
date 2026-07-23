@@ -35,6 +35,7 @@ class ModularAssistiveDrivingSystem:
     self.available = False
     self.lateral_mismatch_counter = 0
     self.allow_always = False
+    self.no_main_cruise = False
     self.lkas_enabled_flag = False
     self.selfdrive = selfdrive
     self.selfdrive.enabled_prev = False
