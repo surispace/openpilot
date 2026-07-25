@@ -166,9 +166,8 @@ class ModularAssistiveDrivingSystem:
     else:
       if self.main_enabled_toggle:
         if CS.cruiseState.available and not self.lkas_enabled_flag:
-          if self.events_sp.contains(EventNameSP.controlsMismatchLateral) is False:
-            self.events_sp.add(EventNameSP.lkasEnable)
-            self.lkas_enabled_flag = True
+          self.events_sp.add(EventNameSP.lkasEnable)
+          self.lkas_enabled_flag = True
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
@@ -185,6 +184,7 @@ class ModularAssistiveDrivingSystem:
 
     if not CS.cruiseState.available and not self.no_main_cruise:
       self.events.remove(EventName.buttonEnable)
+      self.lkas_enabled_flag = False
       if self.selfdrive.CS_prev.cruiseState.available:
         self.events_sp.add(EventNameSP.lkasDisable)
 
