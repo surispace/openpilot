@@ -36,7 +36,6 @@ class ModularAssistiveDrivingSystem:
     self.lateral_mismatch_counter = 0
     self.allow_always = False
     self.no_main_cruise = False
-    self.lkas_enabled_flag = False  # Track if lkas was already enabled on engine start
     self.selfdrive = selfdrive
     self.selfdrive.enabled_prev = False
     self.state_machine = StateMachine(self)
@@ -111,7 +110,7 @@ class ModularAssistiveDrivingSystem:
     # we want to disengage sunnypilot. However the status from the panda goes through
     # another socket other than the CAN messages and one can arrive earlier than the other.
     # Therefore we allow a mismatch for two samples, then we trigger the disengagement.
-    if not self.active or self.selfdrive.enabled or self.lkas_enabled_flag:
+    if not self.active or self.selfdrive.enabled or self.selfdrive.CS_prev.cruiseState.available:
       self.lateral_mismatch_counter = 0
     elif any(not ps.controlsAllowedLateral for ps in self.selfdrive.sm['pandaStates']
              if ps.safetyModel not in IGNORED_SAFETY_MODES):
@@ -165,11 +164,8 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.buttonEnable)
     else:
       if self.main_enabled_toggle:
-        # Enable LKAS when cruise state becomes available (engine starts)
         if CS.cruiseState.available and self.selfdrive.CS_prev.cruiseState.available:
-          if not self.lkas_enabled_flag:
-            self.events_sp.add(EventNameSP.lkasEnable)
-            self.lkas_enabled_flag = True
+          self.events_sp.add(EventNameSP.lkasEnable)
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
@@ -188,7 +184,6 @@ class ModularAssistiveDrivingSystem:
       self.events.remove(EventName.buttonEnable)
       if self.selfdrive.CS_prev.cruiseState.available:
         self.events_sp.add(EventNameSP.lkasDisable)
-        self.lkas_enabled_flag = False  # Reset flag when cruise becomes unavailable
 
     if self.steering_mode_on_brake == MadsSteeringModeOnBrake.DISENGAGE:
       if self.pedal_pressed_non_gas_pressed(CS):
