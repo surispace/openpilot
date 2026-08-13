@@ -56,6 +56,7 @@ class ModularAssistiveDrivingSystem:
     self.main_enabled_toggle = self.params.get_bool("MadsMainCruiseAllowed")
     self.steering_mode_on_brake = read_steering_mode_param(self.CP, self.CP_SP, self.params)
     self.unified_engagement_mode = self.params.get_bool("MadsUnifiedEngagementMode")
+    self.lkas_enabled_on_available = False
 
   def read_params(self):
     self.main_enabled_toggle = self.params.get_bool("MadsMainCruiseAllowed")
@@ -164,8 +165,12 @@ class ModularAssistiveDrivingSystem:
         self.events.remove(EventName.buttonEnable)
     else:
       if self.main_enabled_toggle:
-        if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
-          self.events_sp.add(EventNameSP.lkasEnable)
+        if CS.cruiseState.available:
+          if not self.lkas_enabled_on_available:
+            self.events_sp.add(EventNameSP.lkasEnable)
+          self.lkas_enabled_on_available = True
+        else:
+          self.lkas_enabled_on_available = False
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
