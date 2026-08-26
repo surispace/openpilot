@@ -55,6 +55,12 @@ TurnDirection = custom.ModelDataV2SP.TurnDirection
 
 IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 
+# How long to keep waiting for all required processes to start after initialization
+# before reporting the missing processes as a hard failure. During this window the
+# system shows a "System Initializing" no-entry alert instead of "Process Not Running"
+# so that engagement waits (rather than fails) until the processes have come up.
+PROCESS_STARTUP_WAIT = 90.  # seconds
+
 
 class SelfdriveD(CruiseHelper):
   def __init__(self, CP=None, CP_SP=None):
@@ -138,6 +144,7 @@ class SelfdriveD(CruiseHelper):
     self.events_prev = []
     self.logged_comm_issue = None
     self.not_running_prev = None
+    self.process_startup_wait_left = 0.
     self.experimental_mode = False
     self.personality = get_sanitize_int_param(
       "LongitudinalPersonality",
@@ -375,7 +382,11 @@ class SelfdriveD(CruiseHelper):
         cloudlog.event("process_not_running", not_running=not_running, error=True)
       self.not_running_prev = not_running
     if self.sm.recv_frame['managerState'] and (not_running - self.ignored_processes):
-      self.events.add(EventName.processNotRunning)
+      if self.process_startup_wait_left > 0:
+        self.process_startup_wait_left -= DT_CTRL
+        self.events.add(EventName.selfdriveInitializing)
+      else:
+        self.events.add(EventName.processNotRunning)
     else:
       if not SIMULATION and not self.rk.lagging:
         if not self.sm.all_alive(self.camera_packets):
@@ -512,6 +523,7 @@ class SelfdriveD(CruiseHelper):
           self.state_machine.state = State.enabled
 
         self.initialized = True
+        self.process_startup_wait_left = PROCESS_STARTUP_WAIT
         cloudlog.event(
           "selfdrived.initialized",
           dt=self.sm.frame*DT_CTRL,
