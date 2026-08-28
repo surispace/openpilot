@@ -60,8 +60,10 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 # system shows a "System Initializing" no-entry alert instead of "Process Not Running"
 # so that engagement waits (rather than fails) until the processes have come up.
 # Measured from today's drives: cold-boot transient faults clear by 11.0-15.4s, so
-# 30s comfortably covers the worst case with margin while real faults still surface.
-PROCESS_STARTUP_WAIT = 30.  # seconds
+# 45s comfortably covers the worst case with margin while real faults still surface.
+# 45s also aligns with the gas interceptor startup grace window so interceptor
+# timeouts during boot churn are tolerated.
+PROCESS_STARTUP_WAIT = 45.  # seconds
 
 # During the startup grace window, events in this class are "system not ready yet"
 # faults that are inherently transient on a cold boot (services still spinning up and
