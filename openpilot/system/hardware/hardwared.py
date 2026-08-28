@@ -36,6 +36,13 @@ DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect 
 PANDA_STATES_TIMEOUT = round(1000 / SERVICE_LIST['pandaStates'].frequency * 1.5)  # 1.5x the expected pandaState frequency
 ONROAD_CYCLE_TIME = 1  # seconds to wait offroad after requesting an onroad cycle
 
+# How long after boot to hold thermalStatus at "ok" before trusting the temperature
+# readings. On a cold boot the temperature sensors can briefly report a spike that
+# settles once the device is up, which would otherwise show a brief false TEMP HIGH
+# alert on the sidebar. Holding the status at ok during this window lets the readings
+# stabilize so the alert reflects real conditions instead of a transient spike.
+THERMAL_SETTLE_GRACE = 10.  # seconds
+
 ThermalBand = namedtuple("ThermalBand", ['min_temp', 'max_temp'])
 HardwareState = namedtuple("HardwareState", ['network_type', 'network_info', 'network_strength', 'network_stats',
                                              'network_metered', 'modem_temps', 'usb_state'])
@@ -181,6 +188,10 @@ def hardware_thread(end_event, hw_queue) -> None:
   pwrsave = False
   offroad_cycle_count = 0
 
+  # timestamp marking when this hardware thread started, used to hold thermalStatus
+  # at "ok" until the boot-time temperature spike settles
+  thermal_settle_start = time.monotonic()
+
   params = Params()
   power_monitor = PowerMonitoring()
   initialize_onboarding(params)
@@ -281,6 +292,11 @@ def hardware_thread(end_event, hw_queue) -> None:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx - 1]
       elif current_band.max_temp is not None and all_comp_temp > current_band.max_temp:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx + 1]
+
+    # Hold the status at "ok" during the settle window so a transient boot-time
+    # temperature spike doesn't cause a brief false TEMP HIGH alert on the sidebar.
+    if time.monotonic() - thermal_settle_start < THERMAL_SETTLE_GRACE:
+      thermal_status = ThermalStatus.ok
 
     # **** starting logic ****
 
