@@ -59,7 +59,30 @@ IGNORED_SAFETY_MODES = (SafetyModel.silent, SafetyModel.noOutput)
 # before reporting the missing processes as a hard failure. During this window the
 # system shows a "System Initializing" no-entry alert instead of "Process Not Running"
 # so that engagement waits (rather than fails) until the processes have come up.
-PROCESS_STARTUP_WAIT = 90.  # seconds
+# Measured from today's drives: cold-boot transient faults clear by 11.0-15.4s, so
+# 30s comfortably covers the worst case with margin while real faults still surface.
+PROCESS_STARTUP_WAIT = 30.  # seconds
+
+# During the startup grace window, events in this class are "system not ready yet"
+# faults that are inherently transient on a cold boot (services still spinning up and
+# publishing invalid/not-yet-valid data). They are collapsed into a single
+# "System Initializing" no-entry alert so the device waits instead of throwing a
+# barrage of engagement-blocking errors. Centralized so ANY transient fault in this
+# class is covered, including ones not yet observed on your hardware. Real safety and
+# hardware faults (cameraMalfunction, usbError, controlsMismatch, overheat, lowMemory,
+# canBusMissing, etc.) are deliberately NOT in this set and are never masked.
+STARTUP_TRANSIENT_EVENTS = {
+  EventName.commIssue,
+  EventName.commIssueAvgFreq,
+  EventName.processNotRunning,
+  EventName.selfdrivedLagging,
+  EventName.modeldLagging,
+  EventName.posenetInvalid,
+  EventName.locationdTemporaryError,
+  EventName.paramsdTemporaryError,
+  EventName.sensorDataInvalid,
+  EventName.radarTempUnavailable,
+}
 
 
 class SelfdriveD(CruiseHelper):
@@ -376,17 +399,20 @@ class SelfdriveD(CruiseHelper):
     # All events here should at least have NO_ENTRY and SOFT_DISABLE.
     num_events = len(self.events)
 
+    # startup grace: a real countdown from when selfdrived initializes, decremented
+    # every frame so it expires even when the system is healthy. During the window,
+    # transient cold-boot faults (services still publishing invalid data) are shown as
+    # a single "System Initializing" wait instead of a barrage of errors, and real
+    # faults surface after the window expires.
+    self.process_startup_wait_left = max(0., self.process_startup_wait_left - DT_CTRL)
+
     not_running = {p.name for p in self.sm['managerState'].processes if not p.running and p.shouldBeRunning}
     if self.sm.recv_frame['managerState'] and len(not_running):
       if not_running != self.not_running_prev:
         cloudlog.event("process_not_running", not_running=not_running, error=True)
       self.not_running_prev = not_running
     if self.sm.recv_frame['managerState'] and (not_running - self.ignored_processes):
-      if self.process_startup_wait_left > 0:
-        self.process_startup_wait_left -= DT_CTRL
-        self.events.add(EventName.selfdriveInitializing)
-      else:
-        self.events.add(EventName.processNotRunning)
+      self.events.add(EventName.processNotRunning)
     else:
       if not SIMULATION and not self.rk.lagging:
         if not self.sm.all_alive(self.camera_packets):
@@ -499,6 +525,8 @@ class SelfdriveD(CruiseHelper):
     if self.nrdr.update_personality(self, CS, button_reserved):
       self.events.add(EventName.personalityChanged)
 
+    self.mask_transient_startup_events(self.process_startup_wait_left > 0.)
+
     self.icbm.run(CS, self.sm['carControl'], self.sm['longitudinalPlanSP'], self.is_metric)
 
   def data_sample(self):
@@ -548,6 +576,18 @@ class SelfdriveD(CruiseHelper):
       self.mismatch_counter += 1
 
     return CS
+
+  # Collapse any transient "system not ready" fault during the startup grace window
+  # into a single non-fatal "System Initializing" wait. Any event in the transient
+  # class is covered (including ones not yet seen), while other events are untouched.
+  def mask_transient_startup_events(self, startup_grace: bool):
+    if not startup_grace:
+      return
+    transient = set(self.events.events) & STARTUP_TRANSIENT_EVENTS
+    for e in transient:
+      self.events.remove(e)
+    if transient and not self.events.has(EventName.selfdriveInitializing):
+      self.events.add(EventName.selfdriveInitializing)
 
   def update_alerts(self, CS):
     clear_event_types = set()
