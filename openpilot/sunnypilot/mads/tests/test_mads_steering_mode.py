@@ -251,11 +251,25 @@ class TestLateralMismatchCounter(OpenpilotTestCase):
     mads, sd = make_mads(mocker, MadsSteeringModeOnBrake.PAUSE)
     mads.enabled = True
     mads.active = True
+    sd.enabled = False
+    sd.enabled_prev = True  # lateral active right after longitudinal disengaged
     sd.sm['pandaStates'] = [make_panda_state(mocker, False)]
 
     for _ in range(200):
       mads.data_sample()
     assert mads.lateral_mismatch_counter == 200
+
+  def test_no_accumulation_before_first_engagement(self, mocker):
+    mads, sd = make_mads(mocker, MadsSteeringModeOnBrake.PAUSE)
+    mads.enabled = True
+    mads.active = True
+    sd.enabled = False
+    sd.enabled_prev = False  # LKAS on but cruise never engaged -> panda denies by design
+    sd.sm['pandaStates'] = [make_panda_state(mocker, False)]
+
+    for _ in range(250):
+      mads.data_sample()
+    assert mads.lateral_mismatch_counter == 0
 
 
 # brand restrictions

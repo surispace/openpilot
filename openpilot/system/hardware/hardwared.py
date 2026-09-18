@@ -2,6 +2,7 @@
 import fcntl
 import os
 import queue
+import statistics
 import struct
 import subprocess
 import sys
@@ -42,6 +43,21 @@ ONROAD_CYCLE_TIME = 1  # seconds to wait offroad after requesting an onroad cycl
 SLOW_HARDWARE_STAGE_SECONDS = 0.20
 SLOW_HARDWARE_STAGE_LOG_INTERVAL = 10.0
 NONCRITICAL_TELEMETRY_ERROR_LOG_INTERVAL = 10.0
+
+# How long after boot to hold thermalStatus at "ok" before trusting the temperature
+# readings. On a cold boot the temperature sensors can briefly report a spike that
+# settles once the device is up, which would otherwise show a brief false TEMP HIGH
+# alert on the sidebar. Holding the status at ok during this window lets the readings
+# stabilize so the alert reflects real conditions instead of a transient spike.
+THERMAL_SETTLE_GRACE = 10.  # seconds
+
+# A single bogus temperature reading at boot (observed: one cpuTempC zone jumping from
+# ~52C to 93C for one 500ms sample) would seed/poison the temperature filters and leave
+# the thermal band state machine stuck in overheated/critical for 10-20s - the brief
+# false "TEMP HIGH" at startup. Reject any reading that jumps more than MAX_TEMP_SPIKE_C
+# above the previously accepted value: a real thermal system cannot move that fast, so
+# the sample is treated as a bad read and replaced with the last accepted value.
+MAX_TEMP_SPIKE_C = 8.0
 
 class Chestnut:
   # flash offroad, modeld ignores chestnut until the product string matches
@@ -419,12 +435,24 @@ def hardware_thread(end_event, hw_queue, telemetry_queue) -> None:
 
   all_temp_filter = FirstOrderFilter(0., TEMP_TAU, DT_HW, initialized=False)
   offroad_temp_filter = FirstOrderFilter(0., TEMP_TAU, DT_HW, initialized=False)
+  # Raw temperature maxima collected during the settle grace window. The filters are
+  # seeded from these (median) once the window expires instead of from the first
+  # possibly-garbage read, so a boot-time sensor glitch can't poison them.
+  settle_all_temps: list[float] = []
+  settle_offroad_temps: list[float] = []
+  filters_seeded = False
+  # Last accepted temperature maxima, for spike rejection.
+  prev_maxes: dict[str, list[float]] = {}
   should_start_prev = False
   in_car = False
   engaged_prev = False
   pwrsave = False
   github_runner_sufficient_voltage_prev: bool | None = None
   offroad_cycle_count = 0
+
+  # timestamp marking when this hardware thread started, used to hold thermalStatus
+  # at "ok" until the boot-time temperature spike settles
+  thermal_settle_start = time.monotonic()
 
   params = Params()
   power_monitor = PowerMonitoring()
@@ -529,11 +557,43 @@ def hardware_thread(end_event, hw_queue, telemetry_queue) -> None:
       max(msg.deviceState.cpuTempC, default=0.),
       max(msg.deviceState.gpuTempC, default=0.),
     ]
-    offroad_comp_temp = offroad_temp_filter.update(max(temp_sources))
+    offroad_max = max(temp_sources)
 
     # this drives the thermal status while onroad
     temp_sources.append(max(msg.deviceState.pmicTempC, default=0.))
-    all_comp_temp = all_temp_filter.update(max(temp_sources))
+    all_max = max(temp_sources)
+
+    # A cold boot can produce a single garbage reading (observed: one cpuTempC zone
+    # jumping 52C -> 93C for one 500ms sample), which would otherwise seed/poison the
+    # filters below and leave the thermal bands stuck in overheated/critical for
+    # 10-20s - the brief false "TEMP HIGH" at startup. Reject any upward jump above
+    # MAX_TEMP_SPIKE_C vs the previously accepted group max, and during the settle
+    # window don't feed the filters at all (seed them from the window median below).
+    prev_all = prev_maxes.get("all", [None])[0]
+    prev_off = prev_maxes.get("off", [None])[0]
+    if prev_off is not None and offroad_max > prev_off + MAX_TEMP_SPIKE_C:
+      offroad_max = prev_off
+    if prev_all is not None and all_max > prev_all + MAX_TEMP_SPIKE_C:
+      all_max = prev_all
+    prev_maxes["off"] = [offroad_max]
+    prev_maxes["all"] = [all_max]
+
+    in_settle = time.monotonic() - thermal_settle_start < THERMAL_SETTLE_GRACE
+    if in_settle:
+      # Record the raw maxima and seed the filters from their median once the readings
+      # have settled, so a bogus first read can't poison them.
+      settle_offroad_temps.append(offroad_max)
+      settle_all_temps.append(all_max)
+      all_comp_temp = offroad_max
+      offroad_comp_temp = offroad_max
+    else:
+      if not filters_seeded:
+        all_temp_filter.update(statistics.median(settle_all_temps) if settle_all_temps else all_max)
+        offroad_temp_filter.update(statistics.median(settle_offroad_temps) if settle_offroad_temps else offroad_max)
+        filters_seeded = True
+      offroad_comp_temp = offroad_temp_filter.update(offroad_max)
+      all_comp_temp = all_temp_filter.update(all_max)
+
     msg.deviceState.maxTempC = all_comp_temp
 
     msg.deviceState.fanSpeedPercentDesired = fan_controller.update(all_comp_temp, onroad_conditions["ignition"])
@@ -550,6 +610,11 @@ def hardware_thread(end_event, hw_queue, telemetry_queue) -> None:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx - 1]
       elif current_band.max_temp is not None and all_comp_temp > current_band.max_temp:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx + 1]
+
+    # Hold the status at "ok" during the settle window so a transient boot-time
+    # temperature spike doesn't cause a brief false TEMP HIGH alert on the sidebar.
+    if time.monotonic() - thermal_settle_start < THERMAL_SETTLE_GRACE:
+      thermal_status = ThermalStatus.ok
 
     stage_started = log_slow_hardware_stage("main", "thermal", stage_started, last_slow_stage_log,
                                             started_ts is not None, sm.frame)
