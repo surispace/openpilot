@@ -16,7 +16,19 @@ from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 EventName = log.OnroadEvent.EventName
 EventNameSP = custom.OnroadEventSP.EventName
 GearShifter = structs.CarState.GearShifter
-GAS_INTERCEPTOR_STARTUP_GRACE_FRAMES = int(10. / DT_CTRL)
+# Once the gas interceptor is healthy, its FAULT states used to fault immediately.
+# On a cold boot the device is still finishing startup (manager restarting processes,
+# controlsd settling), which can briefly pause the interceptor keepalive; the pedal
+# hardware then reports FAULT_TIMEOUT / FAULT_STARTUP (STATE 4/5) for a few hundred ms
+# even though nothing is actually wrong. This window (from the start of the onroad
+# session) tolerates those brief transient states, and only faults if the transient
+# state persists longer than GAS_INTERCEPTOR_TRANSIENT_GRACE_FRAMES or after the window
+# expires. Real, sustained interceptor faults still surface since the tolerated
+# transient streak is a small fraction of this period.
+GAS_INTERCEPTOR_STARTUP_GRACE_FRAMES = int(45. / DT_CTRL)
+# Maximum tolerated streak (seconds) of the transient states (4/5) inside the startup
+# grace window before it is treated as a real fault even during startup.
+GAS_INTERCEPTOR_TRANSIENT_GRACE_FRAMES = int(2. / DT_CTRL)
 
 
 class CarSpecificEventsSP:
@@ -27,14 +39,29 @@ class CarSpecificEventsSP:
     self.low_speed_alert = False
     self.gas_interceptor_healthy = False
     self.gas_interceptor_bootstrap_frames = 0
+    self.gas_interceptor_startup_frames = 0
+    self.gas_interceptor_fault_frames = 0
 
   def update(self, CS: structs.CarState, CS_SP: custom.CarStateSP, events: Events):
     events_sp = EventsSP()
+    self.gas_interceptor_startup_frames += 1
 
     if self.CP_SP.enableGasInterceptor:
       interceptor_state = CS_SP.gasInterceptorState
+      if interceptor_state != 0:
+        self.gas_interceptor_fault_frames += 1
+      else:
+        self.gas_interceptor_fault_frames = 0
+
+      # During the startup window, briefly tolerate the transient timeout/startup
+      # states (4/5) so a one-shot FAULT_TIMEOUT from boot churn doesn't hard
+      # disengage. Anything else, or anything sustained, faults immediately.
+      in_startup = self.gas_interceptor_startup_frames < GAS_INTERCEPTOR_STARTUP_GRACE_FRAMES
+      transient_tolerated = in_startup and interceptor_state in (4, 5) and \
+        self.gas_interceptor_fault_frames <= GAS_INTERCEPTOR_TRANSIENT_GRACE_FRAMES
+
       if self.gas_interceptor_healthy:
-        if interceptor_state != 0:
+        if interceptor_state != 0 and not transient_tolerated:
           events.add(EventName.gasInterceptorFault)
       elif interceptor_state == 0:
         self.gas_interceptor_healthy = CS.canValid

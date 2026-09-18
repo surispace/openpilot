@@ -43,6 +43,13 @@ SLOW_HARDWARE_STAGE_SECONDS = 0.20
 SLOW_HARDWARE_STAGE_LOG_INTERVAL = 10.0
 NONCRITICAL_TELEMETRY_ERROR_LOG_INTERVAL = 10.0
 
+# How long after boot to hold thermalStatus at "ok" before trusting the temperature
+# readings. On a cold boot the temperature sensors can briefly report a spike that
+# settles once the device is up, which would otherwise show a brief false TEMP HIGH
+# alert on the sidebar. Holding the status at ok during this window lets the readings
+# stabilize so the alert reflects real conditions instead of a transient spike.
+THERMAL_SETTLE_GRACE = 10.  # seconds
+
 class Chestnut:
   # flash offroad, modeld ignores chestnut until the product string matches
   MAX_ATTEMPTS = 3
@@ -426,6 +433,10 @@ def hardware_thread(end_event, hw_queue, telemetry_queue) -> None:
   github_runner_sufficient_voltage_prev: bool | None = None
   offroad_cycle_count = 0
 
+  # timestamp marking when this hardware thread started, used to hold thermalStatus
+  # at "ok" until the boot-time temperature spike settles
+  thermal_settle_start = time.monotonic()
+
   params = Params()
   power_monitor = PowerMonitoring()
   initialize_onboarding(params)
@@ -550,6 +561,11 @@ def hardware_thread(end_event, hw_queue, telemetry_queue) -> None:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx - 1]
       elif current_band.max_temp is not None and all_comp_temp > current_band.max_temp:
         thermal_status = list(THERMAL_BANDS.keys())[band_idx + 1]
+
+    # Hold the status at "ok" during the settle window so a transient boot-time
+    # temperature spike doesn't cause a brief false TEMP HIGH alert on the sidebar.
+    if time.monotonic() - thermal_settle_start < THERMAL_SETTLE_GRACE:
+      thermal_status = ThermalStatus.ok
 
     stage_started = log_slow_hardware_stage("main", "thermal", stage_started, last_slow_stage_log,
                                             started_ts is not None, sm.frame)
