@@ -113,7 +113,13 @@ class ModularAssistiveDrivingSystem:
     # we want to disengage sunnypilot. However the status from the panda goes through
     # another socket other than the CAN messages and one can arrive earlier than the other.
     # Therefore we allow a mismatch for two samples, then we trigger the disengagement.
-    if not self.active or self.selfdrive.enabled:
+    # Only count while openpilot is currently or was just engaged in longitudinal control:
+    # with LKAS switched on and cruise not yet engaged, the panda legitimately keeps
+    # controlsAllowedLateral=False on this HONDA port (it only grants lateral once fully
+    # engaged), so counting that wait would raise a false "Possible Controls Mismatch"
+    # after 20s of normal pre-engagement driving (observed right after Reset Calibration).
+    was_engaged = self.selfdrive.enabled or self.selfdrive.enabled_prev
+    if not self.active or not was_engaged or self.selfdrive.enabled:
       self.lateral_mismatch_counter = 0
     elif any(not ps.controlsAllowedLateral for ps in self.selfdrive.sm['pandaStates']
              if ps.safetyModel not in IGNORED_SAFETY_MODES):
