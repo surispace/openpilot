@@ -192,7 +192,16 @@ class SelfdriveD(CruiseHelper):
     self.state_machine = StateMachine()
     self.rk = Ratekeeper(100, print_delay_threshold=None)
 
-    self.ignored_processes = {'mapd', }
+    # Processes that are intentionally health-monitored by the manager but must NOT gate
+    # engagement in selfdrived. micd/soundd are excluded because their audio stream (and
+    # with it their wait_for_ready health flag) can take 11-45s to come up on this
+    # hardware (PortAudio enumerates the device late - see audio.py AUDIO_STARTUP_TIMEOUT).
+    # Leaving them gated showed "System Initializing" for up to PROCESS_STARTUP_WAIT while
+    # the recording/playback stack slowly started, even though they are not required for
+    # driving. They still run and are restarted by the manager, and soundd still plays
+    # alerts normally once its stream is open - this only drops the processNotRunning
+    # NO_ENTRY for them.
+    self.ignored_processes = {'mapd', 'micd', 'soundd'}
 
     # Determine startup event
     self.startup_event = EventName.startup

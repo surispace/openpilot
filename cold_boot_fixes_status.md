@@ -148,6 +148,24 @@ Reset Calibration in route `0000008b--…` (t=122-130 s, panda `hondaNidec`,
 | `was_engaged = self.selfdrive.enabled or self.selfdrive.enabled_prev` | Counter only accumulates while longitudinal was currently or just previously engaged (`enabled_prev` = prior frame), then resets otherwise. Pre-engagement LKAS-on waits no longer count; a genuine post-disengage mismatch (panda still denying lateral right after disengage) still accumulates and fires. |
 | Tests | `test_accumulates_when_active_and_panda_disagrees` updated to model the just-disengaged state; added `test_no_accumulation_before_first_engagement` covering the calibration scenario. (Native `msgq` prevents running the suite on macOS; logic validated with a stub harness + `py_compile`.) |
 
+### 8. Don't gate engagement on audio-process readiness (`micd`/`soundd`)
+
+File: `openpilot/selfdrive/selfdrived/selfdrived.py`
+
+Deep dive of the last 4h of device logs showed that in every boot the only
+processes gating readiness were `micd`/`soundd`: everything else (camerad, modeld,
+card, pandad, controllsd…) is running by ~1.3 s, while the audio stack takes
+11-45 s (measured per-boot: 8a≈11 s, 88≈21 s, 8b≈18 s, 8c≈45 s). The cause is
+`PortAudioError('Error querying device -1')` until the codec enumerates; the
+`wait_for_ready` health flag (thus managerState `.running`) is set only after the
+stream opens (`audio.py` retries every 3 s up to `AUDIO_STARTUP_TIMEOUT=90 s`).
+While not running they raised `processNotRunning` → masked to "System Initializing"
+during `PROCESS_STARTUP_WAIT`, holding engagement up to ~45 s.
+
+| Piece | Applied |
+|-------|---------|
+| `self.ignored_processes = {'mapd', 'micd', 'soundd'}` | Only feeds the `processNotRunning` NO_ENTRY computation (`selfdrived.py:473`). The manager still launches/restarts `micd`/`soundd` (`restart_if_crash=True`), and `soundd` still subscribes to `selfdriveState` and plays lane-departure/warning sounds once its stream is open — audio behavior is untouched, only the engagement block is removed. |
+
 ## NOT aligned (deliberate / out of scope)
 
 1. **`restart_if_crash` mechanism does not exist in current `process.py`** — had to
