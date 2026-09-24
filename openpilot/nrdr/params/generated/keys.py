@@ -74,6 +74,7 @@ class NrdrParamKey(StrEnum):
   NRDR_OVERRIDE_THRESHOLD_CENTER_BOOST = "NrdrOverrideThresholdCenterBoost"
   HONDA_OVERRIDE_FADE_DOWN_SECS = "HondaOverrideFadeDownSecs"
   HONDA_OVERRIDE_FADE_UP_SECS = "HondaOverrideFadeUpSecs"
+  HONDA_OVERRIDE_HOLD_SECS = "HondaOverrideHoldSecs"
   HONDA_OVERRIDE_TORQUE_SCALE = "HondaOverrideTorqueScale"
   HONDA_DRIVER_ASSIST_DURING_OVERRIDE = "HondaDriverAssistDuringOverride"
   HONDA_LIVE_LEARNING_GAS = "HondaLiveLearningGas"
@@ -212,6 +213,7 @@ ADDED_KEYS: frozenset[NrdrParamKey] = frozenset((
   NrdrParamKey.NRDR_OVERRIDE_THRESHOLD_CENTER_BOOST,
   NrdrParamKey.HONDA_OVERRIDE_FADE_DOWN_SECS,
   NrdrParamKey.HONDA_OVERRIDE_FADE_UP_SECS,
+  NrdrParamKey.HONDA_OVERRIDE_HOLD_SECS,
   NrdrParamKey.HONDA_OVERRIDE_TORQUE_SCALE,
   NrdrParamKey.HONDA_DRIVER_ASSIST_DURING_OVERRIDE,
   NrdrParamKey.HONDA_LIVE_LEARNING_GAS,

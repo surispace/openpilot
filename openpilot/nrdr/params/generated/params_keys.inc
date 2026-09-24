@@ -68,6 +68,7 @@
     {"NrdrOverrideThresholdCenterBoost", {PERSISTENT | BACKUP, INT, "1000"}},
     {"HondaOverrideFadeDownSecs", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
     {"HondaOverrideFadeUpSecs", {PERSISTENT | BACKUP, FLOAT, "0.1"}},
+    {"HondaOverrideHoldSecs", {PERSISTENT | BACKUP, FLOAT, "1.0"}},
     {"HondaOverrideTorqueScale", {PERSISTENT | BACKUP, INT, "0"}},
     {"HondaDriverAssistDuringOverride", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"HondaLiveLearningGas", {PERSISTENT | BACKUP, BOOL}},

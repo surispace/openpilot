@@ -26,6 +26,7 @@ class HondaControllerFeatures:
     self.previous_set_speed = None
     self.last_cruise_button_time = -1e9
     self.override_ramp = 1.0
+    self.override_hold_remaining = 0.0
     self.lat_active_previous = False
     self.steering_pressed_filter = 0.0
     self.steering_pressed_previous = False
@@ -107,9 +108,15 @@ class HondaControllerFeatures:
         self.override_ramp = 0.0
 
       if steering_pressed:
+        self.override_hold_remaining = live.override_hold_s
         fade_seconds = live.override_fade_down_s
         minimum = live.override_torque_scale
         self.override_ramp = minimum if fade_seconds <= 0.0 else max(minimum, self.override_ramp - DT_CTRL / fade_seconds)
+      elif live.override_hold_s > 0.0 and self.override_hold_remaining > 0.0:
+        self.override_hold_remaining = max(0.0, self.override_hold_remaining - DT_CTRL)
+        down_seconds = live.override_fade_down_s
+        minimum = live.override_torque_scale
+        self.override_ramp = minimum if down_seconds <= 0.0 else max(minimum, self.override_ramp - DT_CTRL / down_seconds)
       else:
         fade_seconds = live.override_fade_up_s
         self.override_ramp = 1.0 if fade_seconds <= 0.0 else min(1.0, self.override_ramp + DT_CTRL / fade_seconds)
@@ -119,6 +126,7 @@ class HondaControllerFeatures:
       # would create a request/output mismatch and spuriously freeze lateral I.
     else:
       self.override_ramp = 0.0
+      self.override_hold_remaining = 0.0
       self.steering_pressed_filter = 0.0
       self.steering_pressed_previous = False
 

@@ -17,6 +17,7 @@ class StaticHondaConfigProvider:
       generation=1,
       override_fade_down_s=0.1,
       override_fade_up_s=0.1,
+      override_hold_s=0.0,
       override_torque_scale=0.0,
       driver_assist_during_override=True,
       live_learning_gas=True,

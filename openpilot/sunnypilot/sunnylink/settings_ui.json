@@ -1484,6 +1484,17 @@
                   "unit": "second"
                 },
                 {
+                  "key": "HondaOverrideHoldSecs",
+                  "widget": "option",
+                  "title": "Override Hold Time Before Re-Engaging",
+                  "description": "After you release the wheel, openpilot waits this long before gradually taking steering control back.",
+                  "details": "Prevents steering vibrations from openpilot fighting your hand when you briefly steer (override) while it is active. 0 disables the wait and re-engages immediately as before.",
+                  "min": 0.0,
+                  "max": 10.0,
+                  "step": 0.1,
+                  "unit": "second"
+                },
+                {
                   "key": "HondaOverrideTorqueScale",
                   "widget": "option",
                   "title": "Override Torque Retain",
