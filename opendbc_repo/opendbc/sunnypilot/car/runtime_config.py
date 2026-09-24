@@ -9,7 +9,6 @@ class HondaLiveTuning:
   generation: int
   override_fade_down_s: float
   override_fade_up_s: float
-  override_hold_s: float
   override_torque_scale: float
   driver_assist_during_override: bool
   live_learning_gas: bool

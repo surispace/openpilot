@@ -462,16 +462,8 @@ sections:
       - key: HondaOverrideFadeUpSecs
         widget: option
         title: Override Torque Fade Up
-        description: Controls how quickly steering torque fades back in after driver override ends.
-        min: 0.0
-        max: 10.0
-        step: 0.1
-        unit: second
-      - key: HondaOverrideHoldSecs
-        widget: option
-        title: Override Hold Time Before Re-Engaging
-        description: After you release the wheel, openpilot waits this long before gradually taking steering control back.
-        details: Prevents steering vibrations from openpilot fighting your hand when you briefly steer (override) while it is active. 0 disables the wait and re-engages immediately as before.
+        description: After a driver override, waits this long (no torque) before fading torque back in over the same time.
+        details: A higher value stops openpilot from tugging the wheel back right as you release it. Setting 1.0 s means it holds for 1 second before the 1 second fade-up ramp.
         min: 0.0
         max: 10.0
         step: 0.1

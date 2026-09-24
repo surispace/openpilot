@@ -81,21 +81,9 @@ class OverrideTuningLayout(Widget):
       min_value=0,
       max_value=1000,
       value_change_step=10,
-      description=lambda: tr("Controls how quickly steering torque fades back in after driver override ends."),
-      label_callback=lambda value: f"{value / 100:.1f} s",
-      use_float_scaling=True,
-    )
-
-    self._override_hold = option_item_sp(
-      param="HondaOverrideHoldSecs",
-      title=lambda: tr("Override Hold Time Before Re-Engaging (Default: 1.0)"),
-      min_value=0,
-      max_value=1000,
-      value_change_step=10,
       description=lambda: tr(
-        "After you release the wheel, openpilot waits this long before gradually taking steering control back. " +
-        "Prevents steering vibrations from openpilot fighting your hand when you briefly steer (override) while it is active. " +
-        "0 disables the wait and re-engages immediately as before."
+        "After a driver override, waits this long (no torque) before fading torque back in over the same time. " +
+        "A higher value stops openpilot from tugging the wheel back right as you release it."
       ),
       label_callback=lambda value: f"{value / 100:.1f} s",
       use_float_scaling=True,
@@ -119,7 +107,6 @@ class OverrideTuningLayout(Widget):
       self._driver_assist_during_override,
       self._override_fade_down,
       self._override_fade_up,
-      self._override_hold,
       self._override_torque_scale,
     ]
 

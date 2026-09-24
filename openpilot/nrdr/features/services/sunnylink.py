@@ -55,7 +55,6 @@ HONDA_TUNING_WRITE_KEYS = frozenset((
   "HondaDriverAssistDuringOverride",
   "HondaOverrideFadeDownSecs",
   "HondaOverrideFadeUpSecs",
-  "HondaOverrideHoldSecs",
   "HondaOverrideTorqueScale",
   "HondaTorqueLowPassFilter",
   "HondaLpfTauLowSpeed",

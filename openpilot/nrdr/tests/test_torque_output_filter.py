@@ -16,7 +16,7 @@ from openpilot.nrdr.params.snapshots import ParamSnapshot
 def tuning(**changes):
   return SimpleNamespace(**({"torque_lpf_enabled": True, "lpf_tau_low": 0.1, "lpf_tau_standard": 0.09,
                             "lpf_tau_highway": 0.07, "increase_override_tolerance": False,
-                            "override_fade_up_s": 0.1, "override_fade_down_s": 0.1, "override_hold_s": 0.0,
+                            "override_fade_up_s": 0.1, "override_fade_down_s": 0.1,
                             "override_torque_scale": 0.0,
                             "steer_delta_limiter_enabled": False, "steer_delta_up": 3.0, "steer_delta_down": 3.0,
                             "driver_assist_during_override": True} | changes))
@@ -127,9 +127,9 @@ def test_honda_filtered_request_does_not_create_false_limiting():
   assert old_flags == 91
 
 
-@pytest.mark.parametrize("hold_s", (0.0, 1.0))
-def test_override_hold_waits_before_fading_back_in(hold_s):
-  live = tuning(override_hold_s=hold_s, override_fade_up_s=0.1)
+@pytest.mark.parametrize("fade_up_s", (0.1, 1.0))
+def test_override_fade_up_also_holds_before_fading_back_in(fade_up_s):
+  live = tuning(override_fade_up_s=fade_up_s)
   honda = honda_postprocessor()
   cs = SimpleNamespace(steeringPressed=True)
   car = SimpleNamespace(out=cs)
@@ -139,15 +139,22 @@ def test_override_hold_waits_before_fading_back_in(hold_s):
   assert honda.override_ramp == 0.0
 
   cs.steeringPressed = False
-  hold_frames = int(hold_s / 0.01)
+  hold_frames = round(fade_up_s / 0.01)
   for _ in range(hold_frames):
     delivered, active = honda.update_steering_torque(command, car, live, 0.8)
     assert active
     assert delivered == pytest.approx(0.0)
 
-  delivered, active = honda.update_steering_torque(command, car, live, 0.8)
-  assert active
-  assert delivered == pytest.approx(0.08)  # Fade-up begins only after the hold expires.
+  # Float subtraction can leave a sub-frame epsilon in the timer, so the ramp
+  # may begin 1 frame later than the exact hold time.
+  for _ in range(3):
+    delivered, active = honda.update_steering_torque(command, car, live, 0.8)
+    assert active
+    if delivered > 0.0:
+      assert delivered == pytest.approx(0.8 * 0.01 / fade_up_s)
+      break
+  else:
+    pytest.fail("fade-up never resumed after the override hold")
 
 
 @pytest.mark.parametrize("guard", ("driver", "rate_limit"))

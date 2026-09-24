@@ -108,11 +108,11 @@ class HondaControllerFeatures:
         self.override_ramp = 0.0
 
       if steering_pressed:
-        self.override_hold_remaining = live.override_hold_s
+        self.override_hold_remaining = live.override_fade_up_s
         fade_seconds = live.override_fade_down_s
         minimum = live.override_torque_scale
         self.override_ramp = minimum if fade_seconds <= 0.0 else max(minimum, self.override_ramp - DT_CTRL / fade_seconds)
-      elif live.override_hold_s > 0.0 and self.override_hold_remaining > 0.0:
+      elif self.override_hold_remaining > 0.0:
         self.override_hold_remaining = max(0.0, self.override_hold_remaining - DT_CTRL)
         down_seconds = live.override_fade_down_s
         minimum = live.override_torque_scale

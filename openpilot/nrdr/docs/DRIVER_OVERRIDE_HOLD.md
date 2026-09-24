@@ -1,8 +1,7 @@
 # Driver Override Hold
 
-`HondaOverrideHoldSecs` is a Honda steering-override coexistence setting that
-fixes steering vibration caused by openpilot re-engaging the moment the driver
-relaxes their grip.
+Honda steering-override coexistence behavior that prevents steering vibration
+caused by openpilot re-engaging the moment the driver relaxes their grip.
 
 ## The problem
 
@@ -21,54 +20,49 @@ platforms.
 
 ## The fix
 
-After a driver override, openpilot keeps yielding for a configurable hold time
-before it starts taking control back. During the hold, torque stays at
-`HondaOverrideTorqueScale` (normally 0) and the fade-up does not start. Only
-when the hold expires does the normal `HondaOverrideFadeUpSecs` ramp run.
-Re-arming is automatic: any new press while holding simply resumes the override
-and re-arms the full hold.
+While the driver is pressing, the fade-down behaves as before. After release,
+`HondaOverrideFadeUpSecs` now serves a dual role: openpilot first waits that
+long with torque held at `HondaOverrideTorqueScale` (normally 0), and only then
+runs its normal fade-up ramp over the same value.
 
 ```text
-Fade down                                     Hold (no torque)          Fade up
-|--------------------------|----|---------------------------------------------|
-force on wheel     release                    hold time                 full torque
+Fade down            Hold (no torque)          Fade up
+|---------------------|--|------------------------------------------------------|
+force on wheel  release    fade_up seconds          ramp over fade_up seconds
 ```
 
-The no-torque hold is what converts the sharp "who has the wheel" handshake
-into a one-directional handoff: the driver always owns the wheel first, and
-openpilot only asks for it back after a deliberate, uninterrupted pause.
+So with `HondaOverrideFadeUpSecs = 1.0`, control returns after 1 s of no
+assist followed by a 1 s smooth ramp. Re-arming is automatic: any new press
+during the hold simply resumes the override and re-arms the full hold.
 
 ## Setting
 
 | Param | Default | Range | Unit |
 | :--- | :---: | :---: | :---: |
-| `HondaOverrideHoldSecs` | 1.0 | 0.0–10.0 | s |
+| `HondaOverrideFadeUpSecs` | 0.1 | 0.0–10.0 | s |
 
-- `0.0` disables the hold: re-engagement starts immediately on release, exactly
-  as before.
-- 1.0–2.0 s is the practical handoff window for normal corrections.
+- The value is both the hold time and the fade-up ramp time; 1.0–2.0 s is the
+  practical handoff window for normal corrections.
+- `0.0` disables both the hold and the ramp (torque returns immediately), as it
+  always did.
 - The hold only applies to override release while lateral control stays active.
   If lateral control disengages, the override ramp state resets as before.
 
+No new parameter is introduced: the native C++ params registry and the device
+`libparams_c` binary are unchanged, so this needs no device recompile.
+
 ## Implementation
 
-- Registry: `HondaOverrideHoldSecs` (FLOAT, persistent, backed up) in
-  `openpilot/nrdr/params/specs.py`; generated Python keys/C++ include via
-  `openpilot/nrdr/params/generate.py`.
-- Live path: `openpilot/nrdr/car/opendbc.py` publishes it on the typed
-  `HondaLiveTuning` boundary (`override_hold_s`, slow param group, 0–10 s clamp).
 - Behavior: `update_steering_torque()` in
   `opendbc_repo/opendbc/sunnypilot/car/honda/controller_features.py`. While a
-  press is active the hold timer is armed; on release the timer counts down and
-  the fade-down continues to the override minimum; only after the timer expires
-  does the fade-up ramp begin. `DT_CTRL` is the time base, so the hold is live
-  and framerate-independent.
+  press is active the hold timer is armed from `live.override_fade_up_s`; on
+  release the timer counts down and the fade-down continues to the override
+  minimum; only after the timer expires does the fade-up ramp begin.
+  `DT_CTRL` is the time base, so the hold is live and framerate-independent.
 
 ## Validation
 
 - `openpilot/nrdr/tests/test_torque_output_filter.py` exercises the production
-  steering source directly: `test_override_hold_waits_before_fading_back_in`
+  steering source directly: `test_override_fade_up_also_holds_before_fading_back_in`
   verifies torque holds at the override minimum for the full hold and that
-  fade-up begins only after it expires, for both 0.0 s (disabled) and 1.0 s.
-- Boundary tests in `test_opendbc_boundary.py` pin the default (1.0 s) and the
-  0–10 s clamp on the typed boundary.
+  fade-up begins only after it expires, for both 0.1 s and 1.0 s.

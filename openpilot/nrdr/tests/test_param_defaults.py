@@ -56,7 +56,6 @@ EXPECTED_VALUE_DEFAULTS = {
   "NrdrOverrideThresholdCenterBoost": 1000,
   "HondaOverrideFadeDownSecs": 0.1,
   "HondaOverrideFadeUpSecs": 0.1,
-  "HondaOverrideHoldSecs": 1.0,
   "ChevronInfo": 4,
   "DevUIInfo": 3,
   "OnroadScreenOffBrightness": 1,
