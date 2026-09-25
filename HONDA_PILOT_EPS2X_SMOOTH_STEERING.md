@@ -75,6 +75,7 @@ residual buzz remains below 25 mph and it is not yet fully smooth across the
 | Pass-through assist torque on override | On | **On** | N/A | N/A |
 | Override Torque Fade Down | 0.10 s | **0.10 s** | 0.00 | 10.00 |
 | Override Torque Fade Up | 0.10 s | **0.40 s** | 0.00 | 10.00 |
+| Override Hold Time Before Re-Engaging | 0.00 s | **1.50 s** | 0.00 | 10.00 |
 | Override Torque Retain | 0% | **0%** | 0 | 100 |
 
 ---

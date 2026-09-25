@@ -90,6 +90,7 @@ class TestOpendbcBoundary(unittest.TestCase):
     self.assertSetEqual(set(grouped_keys), {
       OpendbcParamKey.HONDA_OVERRIDE_FADE_DOWN_SECS,
       OpendbcParamKey.HONDA_OVERRIDE_FADE_UP_SECS,
+      OpendbcParamKey.HONDA_OVERRIDE_HOLD_SECS,
       OpendbcParamKey.HONDA_OVERRIDE_TORQUE_SCALE,
       OpendbcParamKey.HONDA_DRIVER_ASSIST_DURING_OVERRIDE,
       OpendbcParamKey.HONDA_LIVE_LEARNING_GAS,
@@ -206,6 +207,7 @@ class TestOpendbcBoundary(unittest.TestCase):
       generation=tuning.generation,
       override_fade_down_s=0.1,
       override_fade_up_s=0.1,
+      override_hold_s=1.0,
       override_torque_scale=0.0,
       driver_assist_during_override=True,
       live_learning_gas=True,
@@ -251,6 +253,7 @@ class TestOpendbcBoundary(unittest.TestCase):
     params = FakeParams(values={
       OpendbcParamKey.HONDA_OVERRIDE_FADE_DOWN_SECS: -1.0,
       OpendbcParamKey.HONDA_OVERRIDE_FADE_UP_SECS: 20.0,
+      OpendbcParamKey.HONDA_OVERRIDE_HOLD_SECS: 25.0,
       OpendbcParamKey.HONDA_OVERRIDE_TORQUE_SCALE: 25,
       OpendbcParamKey.HONDA_STOPPING_DECEL_RATE: 30,
       OpendbcParamKey.NRDR_DRIVER_OVERRIDE_THRESHOLD: -1,
@@ -264,6 +267,7 @@ class TestOpendbcBoundary(unittest.TestCase):
 
     self.assertEqual(tuning.override_fade_down_s, 0.0)
     self.assertEqual(tuning.override_fade_up_s, 10.0)
+    self.assertEqual(tuning.override_hold_s, 10.0)
     self.assertEqual(tuning.override_torque_scale, 0.25)
     self.assertEqual(tuning.stopping_decel_rate, 0.3)
     self.assertEqual(tuning.driver_override_threshold, 1400.0)

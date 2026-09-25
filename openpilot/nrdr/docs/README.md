@@ -9,6 +9,8 @@ code:
   changes.
 - [Predictive lateral stiction](LATERAL_STICTION.md) documents the current
   stiction overlay.
+- [Driver override hold](DRIVER_OVERRIDE_HOLD.md) documents the wait-before-
+  re-engage setting that prevents steering vibration during driver override.
 - [Honda Bosch-A radar](RADAR_EXPERIMENTAL.md) documents the experimental
   factory-radar decoder and its operating limits.
 - [Radar reverse engineering](../tools/radar_re/README.md) documents the

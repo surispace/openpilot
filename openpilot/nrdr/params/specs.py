@@ -172,6 +172,7 @@ PARAM_SPECS: tuple[ParamSpec, ...] = (
   _added("NrdrOverrideThresholdCenterBoost", ParamType.INT, PB, "1000", owner=ParamOwner.LATERAL),
   _added("HondaOverrideFadeDownSecs", ParamType.FLOAT, PB, "0.1", owner=ParamOwner.HONDA),
   _added("HondaOverrideFadeUpSecs", ParamType.FLOAT, PB, "0.1", owner=ParamOwner.HONDA),
+  _added("HondaOverrideHoldSecs", ParamType.FLOAT, PB, "1.0", owner=ParamOwner.HONDA),
   _added("HondaOverrideTorqueScale", ParamType.INT, PB, "0", owner=ParamOwner.HONDA),
   _added("HondaDriverAssistDuringOverride", ParamType.BOOL, PB, "1", owner=ParamOwner.HONDA),
   _added("HondaLiveLearningGas", ParamType.BOOL, PB, owner=ParamOwner.HONDA),

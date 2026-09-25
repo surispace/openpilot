@@ -43,6 +43,7 @@ class NrdrHondaParamKey(StrEnum):
   HONDA_WIND_FACTOR = "HondaWindFactorParams"
   HONDA_OVERRIDE_FADE_DOWN_SECS = NrdrParamKey.HONDA_OVERRIDE_FADE_DOWN_SECS
   HONDA_OVERRIDE_FADE_UP_SECS = NrdrParamKey.HONDA_OVERRIDE_FADE_UP_SECS
+  HONDA_OVERRIDE_HOLD_SECS = NrdrParamKey.HONDA_OVERRIDE_HOLD_SECS
   HONDA_OVERRIDE_TORQUE_SCALE = NrdrParamKey.HONDA_OVERRIDE_TORQUE_SCALE
   HONDA_DRIVER_ASSIST_DURING_OVERRIDE = NrdrParamKey.HONDA_DRIVER_ASSIST_DURING_OVERRIDE
   HONDA_LIVE_LEARNING_GAS = NrdrParamKey.HONDA_LIVE_LEARNING_GAS
@@ -78,6 +79,7 @@ SLOW_PARAM_GROUPS = (
   (
     OpendbcParamKey.HONDA_OVERRIDE_FADE_DOWN_SECS,
     OpendbcParamKey.HONDA_OVERRIDE_FADE_UP_SECS,
+    OpendbcParamKey.HONDA_OVERRIDE_HOLD_SECS,
     OpendbcParamKey.HONDA_OVERRIDE_TORQUE_SCALE,
     OpendbcParamKey.HONDA_DRIVER_ASSIST_DURING_OVERRIDE,
   ),
@@ -228,6 +230,7 @@ class HondaParamsProvider:
       generation=snapshot.generation,
       override_fade_down_s=_float_value(values.get(OpendbcParamKey.HONDA_OVERRIDE_FADE_DOWN_SECS), 0.1, 0.0, 10.0),
       override_fade_up_s=_float_value(values.get(OpendbcParamKey.HONDA_OVERRIDE_FADE_UP_SECS), 0.1, 0.0, 10.0),
+      override_hold_s=_float_value(values.get(OpendbcParamKey.HONDA_OVERRIDE_HOLD_SECS), 1.0, 0.0, 10.0),
       override_torque_scale=_float_value(values.get(OpendbcParamKey.HONDA_OVERRIDE_TORQUE_SCALE), 0.0, 0.0, 100.0, 100.0),
       driver_assist_during_override=_bool_value(values.get(OpendbcParamKey.HONDA_DRIVER_ASSIST_DURING_OVERRIDE), True),
       live_learning_gas=_bool_value(values.get(OpendbcParamKey.HONDA_LIVE_LEARNING_GAS), self._live_learning_default),

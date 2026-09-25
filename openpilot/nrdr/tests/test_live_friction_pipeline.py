@@ -57,10 +57,12 @@ def test_highway_friction_round_trip_remains_live_through_final_software_output(
     # constructor initializes unrelated longitudinal storage and is not needed.
     honda = HondaControllerFeatures.__new__(HondaControllerFeatures)
     honda.override_ramp = 1.0
+    honda.override_hold_remaining = 0.0
     honda.lat_active_previous = True
     honda.steering_pressed_filter = 0.0
     honda.steering_pressed_previous = False
     live = SimpleNamespace(increase_override_tolerance=False, override_fade_up_s=1.0,
+                           override_hold_s=0.0,
                            torque_lpf_enabled=True, lpf_tau_low=0.1, lpf_tau_standard=0.05,
                            lpf_tau_highway=0.02, steer_delta_limiter_enabled=False,
                            driver_assist_during_override=True)
