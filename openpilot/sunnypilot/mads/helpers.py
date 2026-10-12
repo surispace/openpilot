@@ -16,6 +16,29 @@ from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlags
 MADS_NO_ACC_MAIN_BUTTON = ("rivian", "tesla")
 
 
+class AutoLkas:
+  """Always-on lateral where ACC main is the switch (MadsMainCruiseAllowed): lateral engages as
+  soon as main is available, main off disables it, and the LKAS button toggles it. A disable
+  (button or main off) is held until the button is pressed again or main cycles, because the
+  latch re-arms only when main is unavailable."""
+
+  def __init__(self):
+    self.armed = True
+    self.enabled_prev = False
+
+  def request(self, CS: structs.CarState, main_enabled: bool, events, event_name) -> None:
+    main_available = bool(CS.cruiseState.available)
+    if not main_available:
+      self.armed = True
+    if main_enabled and self.armed and main_available:
+      events.add(event_name.lkasEnable)
+
+  def update(self, enabled: bool) -> None:
+    if enabled and not self.enabled_prev:
+      self.armed = False
+    self.enabled_prev = enabled
+
+
 def mads_button_owns_lateral(CP: structs.CarParams, CP_SP: structs.CarParamsSP) -> bool:
   """The driver declared a MADS button that is the only lateral switch: ACC main neither
   engages nor disengages, and unified engagement does not couple to it."""

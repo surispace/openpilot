@@ -8,13 +8,16 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.cereal import custom
 from opendbc.car import structs
 from opendbc.car.hyundai.values import HyundaiFlags
+from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from openpilot.selfdrive.selfdrived.events import Events
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
 from openpilot.sunnypilot.mads.mads import ModularAssistiveDrivingSystem
+from openpilot.sunnypilot.mads.state import State
 from openpilot.common.test import OpenpilotTestCase
 
 EventNameSP = custom.OnroadEventSP.EventName
 SafetyModel = structs.CarParams.SafetyModel
+ButtonType = structs.CarState.ButtonEvent.Type
 
 
 def make_car_state(available):
@@ -77,3 +80,66 @@ class TestMainCruiseOffSwitch(OpenpilotTestCase):
     # a hyundai with an LDA button engages MADS with main cruise off, so a low availability
     # level is a normal state there and must not disable it
     assert not self._run("hyundai", prev_available=False, enabled=True, flags=HyundaiFlags.HAS_LDA_BUTTON)
+
+
+class TestAutoLkas(OpenpilotTestCase):
+  """AutoLkas: with main cruise allowed, LKAS is on by default whenever main is available; main
+  off disables it; and the LKAS button toggles it. Main re-arms the latch on the way down."""
+
+  def _mads(self, brand="honda", prev_available=True):
+    return make_mads(self._fixture("mocker"), brand, prev_available)
+
+  def _frame(self, mads, sd, cs):
+    sd.events.clear()
+    sd.events_sp.clear()
+    mads.update(cs)
+    sd.CS_prev = cs
+
+  def test_main_available_requests_enable_without_a_rising_edge(self):
+    mads, sd = self._mads(prev_available=True)
+    mads.update_events(make_car_state(True))
+    assert sd.events_sp.has(EventNameSP.lkasEnable)
+
+  def test_enable_latches_off_the_repeat_request(self):
+    mads, sd = self._mads()
+    self._frame(mads, sd, make_car_state(True))
+    assert mads.state_machine.state == State.enabled
+    assert not mads.auto_lkas.armed
+
+    self._frame(mads, sd, make_car_state(True))
+    assert mads.state_machine.state == State.enabled
+    assert not sd.events_sp.has(EventNameSP.lkasEnable)
+
+  def test_main_off_disables_and_re_arms(self):
+    mads, sd = self._mads()
+    self._frame(mads, sd, make_car_state(True))
+    assert mads.state_machine.state == State.enabled
+
+    self._frame(mads, sd, make_car_state(False))
+    assert mads.state_machine.state == State.disabled
+    assert mads.auto_lkas.armed
+
+    self._frame(mads, sd, make_car_state(True))
+    assert mads.state_machine.state == State.enabled
+
+  def test_lkas_button_toggles(self):
+    mads, sd = self._mads()
+    self._frame(mads, sd, make_car_state(True))
+    assert mads.state_machine.state == State.enabled
+
+    pressed = make_car_state(True)
+    be = structs.CarState.ButtonEvent()
+    be.type = ButtonType.lkas
+    be.pressed = True
+    pressed.buttonEvents = [be]
+
+    self._frame(mads, sd, pressed)
+    assert mads.state_machine.state == State.disabled
+
+    self._frame(mads, sd, pressed)
+    assert mads.state_machine.state == State.enabled
+
+  def test_declared_button_brand_is_not_auto_engaged(self):
+    mads, sd = make_mads(self._fixture("mocker"), "mazda", True, sp_flags=MazdaFlagsSP.TJA_BUTTON)
+    mads.update_events(make_car_state(True))
+    assert not sd.events_sp.has(EventNameSP.lkasEnable)
