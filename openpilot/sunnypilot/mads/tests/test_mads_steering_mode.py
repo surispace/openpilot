@@ -258,17 +258,33 @@ class TestLateralMismatchCounter(OpenpilotTestCase):
     mads, sd = make_mads(mocker, MadsSteeringModeOnBrake.PAUSE)
     mads.enabled = True
     mads.active = True
+    # only counted while openpilot is, or was just, longitudinally engaged (Honda pre-engaging
+    # LKAS reads controlsAllowedLateral=False legitimately): see data_sample
+    sd.enabled_prev = True
     sd.sm['pandaStates'] = [make_panda_state(mocker, False)]
 
     for _ in range(200):
       mads.data_sample()
     assert mads.lateral_mismatch_counter == 200
 
+  def test_no_accumulation_before_first_engagement(self, mocker):
+    mads, sd = make_mads(mocker, MadsSteeringModeOnBrake.PAUSE)
+    mads.enabled = True
+    mads.active = True
+    sd.enabled = False
+    sd.enabled_prev = False  # LKAS on but cruise never engaged -> panda denies by design
+    sd.sm['pandaStates'] = [make_panda_state(mocker, False)]
+
+    for _ in range(250):
+      mads.data_sample()
+    assert mads.lateral_mismatch_counter == 0
+
   def test_warning_precedes_the_disable(self, mocker):
     # Alert before the disable because steering is unavailable from the first rejected frame.
     mads, sd = make_mads(mocker, MadsSteeringModeOnBrake.PAUSE)
     mads.enabled = True
     mads.active = True
+    sd.enabled_prev = True
     sd.sm['pandaStates'] = [make_panda_state(mocker, False)]
     cs = make_car_state(v_ego=10.0)
 
