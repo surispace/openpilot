@@ -86,9 +86,11 @@ class TestMadsStockLkas(OpenpilotTestCase):
     assert self.frame(lka_off=True) == State.paused
     assert self.frame() == State.enabled
 
-  def test_disabled_mads_stays_disabled_through_lka(self):
-    assert self.frame(lka_off=True) == State.disabled
-    assert self.frame() == State.disabled
+  def test_mads_engages_on_available_main_and_pauses_while_lka_is_off(self):
+    # AutoLkas: main available means LKAS on by default, so a fresh MADS engages; the car's own
+    # lane keep being off holds it paused until LKA returns.
+    assert self.frame(lka_off=True) == State.paused
+    assert self.frame() == State.enabled
 
   def test_brake_under_pause_holds_the_resume(self):
     self.mads.steering_mode_on_brake = MadsSteeringModeOnBrake.PAUSE

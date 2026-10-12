@@ -12,7 +12,7 @@ from opendbc.car.hyundai.values import HyundaiFlags
 from opendbc.sunnypilot.car.mazda.values import MazdaFlagsSP
 from openpilot.common.params import Params
 from openpilot.selfdrive.selfdrived.events import ET
-from openpilot.sunnypilot.mads.helpers import MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
+from openpilot.sunnypilot.mads.helpers import AutoLkas, MadsSteeringModeOnBrake, read_steering_mode_param, MADS_NO_ACC_MAIN_BUTTON
 from openpilot.sunnypilot.mads.state import StateMachine, paused_silent
 
 State = custom.ModularAssistiveDrivingSystem.ModularAssistiveDrivingSystemState
@@ -52,6 +52,7 @@ class ModularAssistiveDrivingSystem:
     self.events = self.selfdrive.events
     self.events_sp = self.selfdrive.events_sp
     self.disengage_on_accelerator = Params().get_bool("DisengageOnAccelerator")
+    self.auto_lkas = AutoLkas()
     if self.CP.brand == "hyundai":
       if self.CP.flags & (HyundaiFlags.HAS_LDA_BUTTON | HyundaiFlags.CANFD):
         self.allow_always = True
@@ -142,7 +143,13 @@ class ModularAssistiveDrivingSystem:
     # we want to disengage sunnypilot. However the status from the panda goes through
     # another socket other than the CAN messages and one can arrive earlier than the other.
     # Therefore we allow a mismatch for two samples, then we trigger the disengagement.
-    if not self.active or self.selfdrive.enabled:
+    # Only count while openpilot is currently or was just engaged in longitudinal control:
+    # with LKAS switched on and cruise not yet engaged, the panda legitimately keeps
+    # controlsAllowedLateral=False on this HONDA port (it only grants lateral once fully
+    # engaged), so counting that wait would raise a false "Possible Controls Mismatch"
+    # after 20s of normal pre-engagement driving (observed right after Reset Calibration).
+    was_engaged = self.selfdrive.enabled or self.selfdrive.enabled_prev
+    if not self.active or not was_engaged or self.selfdrive.enabled:
       self.lateral_mismatch_counter = 0
     elif any(not ps.controlsAllowedLateral for ps in self.selfdrive.sm['pandaStates']
              if ps.safetyModel not in IGNORED_SAFETY_MODES):
@@ -187,6 +194,12 @@ class ModularAssistiveDrivingSystem:
     # wrongCarMode alert only or actively block control
     self.get_wrong_car_mode(selfdrive_enable_events or set_speed_btns_enable)
 
+    # Always-on LKAS where ACC main is the lateral switch (MadsMainCruiseAllowed): request the
+    # enable on the main level, not only its rising edge, so main-on means LKAS on by default.
+    # A button press or main-off disables it and is held until the button is pressed again or
+    # main cycles; the LKAS button always toggles. Skipped where main is not the switch.
+    self.auto_lkas.request(CS, self.main_enabled_toggle and not self.button_owns_lateral, self.events_sp, EventNameSP)
+
     if selfdrive_enable_events:
       if self.pedal_pressed_non_gas_pressed(CS):
         self.events_sp.add(EventNameSP.pedalPressedAlertOnly)
@@ -194,10 +207,6 @@ class ModularAssistiveDrivingSystem:
       if self.block_unified_engagement_mode():
         self.events.remove(EventName.pcmEnable)
         self.events.remove(EventName.buttonEnable)
-    else:
-      if self.main_enabled_toggle and not self.button_owns_lateral:
-        if CS.cruiseState.available and not self.selfdrive.CS_prev.cruiseState.available:
-          self.events_sp.add(EventNameSP.lkasEnable)
 
     for be in CS.buttonEvents:
       if be.type == ButtonType.cancel:
@@ -273,6 +282,7 @@ class ModularAssistiveDrivingSystem:
 
     if not self.CP.passive and self.selfdrive.initialized:
       self.enabled, self.active = self.state_machine.update()
+      self.auto_lkas.update(self.enabled)
 
     self.lateral_held = ((self.state_machine.state == State.paused and self.events_sp.zp.has(EventNameZP.stockLkasOff)) or
                          (self.enabled and self.events_sp.zp.has(EventNameZP.stockLkasArming)))
