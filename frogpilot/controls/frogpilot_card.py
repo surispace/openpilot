@@ -17,6 +17,8 @@ class FrogPilotCard:
     self.long_press_threshold = CRUISE_LONG_PRESS * (1.5 if self.car.CP.carName == "gm" else 1)
     self.very_long_press_threshold = CRUISE_LONG_PRESS * 5
 
+    self.always_on_lateral_allowed = False
+    self.cruise_available_previously = False
     self.force_coast = False
     self.manual_transmission = self.car.CP.transmissionType == car.CarParams.TransmissionType.manual
     self.onroad_distance_button = False
@@ -77,6 +79,37 @@ class FrogPilotCard:
 
     frogpilotCarState.distancePressed |= self.onroad_distance_button
 
+    if frogpilot_toggles.always_on_lateral_lkas:
+      if not car_safety_mode_set:
+        self.always_on_lateral_allowed = False
+      else:
+        if any(be.pressed and be.type == ButtonType.lkas for be in carState.buttonEvents):
+          self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+
+        self.always_on_lateral_allowed |= any(panda_state.controlsAllowed for panda_state in sm["pandaStates"])
+    elif frogpilot_toggles.always_on_lateral_main:
+      main_cruise_on = carState.cruiseState.available
+      self.always_on_lateral_allowed |= (not self.cruise_available_previously) and main_cruise_on
+      self.always_on_lateral_allowed &= main_cruise_on
+
+      if self.lkas_starts_lateral and main_cruise_on and any(be.pressed and be.type == ButtonType.lkas for be in carState.buttonEvents):
+        self.always_on_lateral_allowed = not self.always_on_lateral_allowed
+        self.lkas_press_used = True
+
+      self.cruise_available_previously = main_cruise_on
+
+    if self.lkas_press_used:
+      self.lkas_press_used = not any(not be.pressed and be.type == ButtonType.lkas for be in carState.buttonEvents)
+      carState.buttonEvents = [be.copy() for be in carState.buttonEvents if be.type != ButtonType.lkas]
+
+    self.always_on_lateral_enabled = self.always_on_lateral_allowed and frogpilot_toggles.always_on_lateral_set
+    self.always_on_lateral_enabled &= carState.gearShifter not in frogpilot_variables.NON_DRIVING_GEARS
+    self.always_on_lateral_enabled &= sm["frogpilotPlan"].lateralCheck
+    self.always_on_lateral_enabled &= sm["liveCalibration"].calPerc >= 1
+    self.always_on_lateral_enabled &= not sm["frogpilotControlsState"].hasDisableEvents or frogpilot_utilities.is_FrogsGoMoo()
+    self.always_on_lateral_enabled &= not any(event.name == EventName.tooDistracted for event in sm["onroadEvents"])
+    self.always_on_lateral_enabled &= not (carState.brakePressed and carState.vEgo < frogpilot_toggles.always_on_lateral_pause_speed) or carState.standstill
+    self.always_on_lateral_enabled &= not self.error_log.is_file() or frogpilot_utilities.is_FrogsGoMoo()
     if any(be.pressed and be.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for be in carState.buttonEvents):
       self.accel_press_count += 1
 
