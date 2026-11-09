@@ -184,6 +184,8 @@ def create_ui_commands(packer, CAN, CP, enabled, pcm_speed, hud, is_metric, acc_
     lkas_hud_values['DASHED_LANES'] = hud.lanes_visible
     # car likely needs to see LKAS_PROBLEM fall within a specific time frame, so forward from camera
     lkas_hud_values['LKAS_PROBLEM'] = lkas_hud['LKAS_PROBLEM']
+  else:
+    lkas_hud_values['DASHED_LANES'] = hud.lanes_visible and not lat_active
 
   if not (CP.flags & HondaFlags.BOSCH_EXT_HUD):
     lkas_hud_values['SET_ME_X48'] = 0x48

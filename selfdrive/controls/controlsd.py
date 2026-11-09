@@ -834,7 +834,7 @@ class Controls:
     hudControl = CC.hudControl
     hudControl.setSpeed = float(self.v_cruise_helper.v_cruise_cluster_kph * CV.KPH_TO_MS)
     hudControl.speedVisible = self.enabled
-    hudControl.lanesVisible = self.enabled
+    hudControl.lanesVisible = self.enabled or self.sm['frogpilotCarState'].alwaysOnLateralEnabled
     hudControl.leadVisible = self.sm['longitudinalPlan'].hasLead
     hudControl.leadDistanceBars = self.personality + 1
 
