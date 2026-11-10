@@ -16,6 +16,9 @@ from openpilot.sunnypilot import PARAMS_UPDATE_PERIOD, get_sanitize_int_param
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit import LIMIT_MAX_MAP_DATA_AGE, LIMIT_ADAPT_ACC
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.limits import COMMIT_FRAC, OP_LONG_COAST_A, get_planning_limits
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.common import Policy, OffsetType
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_reader_paths import (
+  PARAM_SPEED_LIMIT_CAMERA_VALUE,
+)
 
 SpeedLimitSource = custom.LongitudinalPlanSP.SpeedLimit.Source
 
@@ -120,7 +123,14 @@ class SpeedLimitResolver:
 
   def _get_from_car_state(self, sm: messaging.SubMaster) -> None:
     self._reset_limit_sources(SpeedLimitSource.car)
-    self.limit_solutions[SpeedLimitSource.car] = sm['carStateSP'].speedLimit
+    # Camera values replace the dashboard for the car source (no dashboard fallback;
+    # the car source IS the camera source for testing).
+    raw = self.params.get(PARAM_SPEED_LIMIT_CAMERA_VALUE)
+    try:
+      value = float(raw) if raw is not None else 0.0
+    except (TypeError, ValueError):
+      value = 0.0
+    self.limit_solutions[SpeedLimitSource.car] = value if value >= 1.0 else 0.0
     self.distance_solutions[SpeedLimitSource.car] = 0.
 
   def _get_from_map_data(self, sm: messaging.SubMaster) -> None:

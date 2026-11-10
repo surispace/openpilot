@@ -135,13 +135,44 @@ class TestSpeedLimitResolverValidation(OpenpilotTestCase):
     assert resolver.speed_limit is not None
     assert resolver.distance is not None
     assert resolver.source is not None
-
   @parameterized.expand(list(Policy), names=["policy"])
   def test_old_map_data_ignored(self, resolver_class, policy, mocker):
     resolver = resolver_class()
     resolver.policy = policy
+
     sm_mock = mocker.MagicMock()
     sm_mock['gpsLocation'].unixTimestampMillis = (time.monotonic() - 2 * LIMIT_MAX_MAP_DATA_AGE) * 1e3
     resolver._get_from_map_data(sm_mock)
     assert resolver.limit_solutions[SpeedLimitSource.map] == 0.
     assert resolver.distance_solutions[SpeedLimitSource.map] == 0.
+
+  def _set_camera(self, resolver, value: float):
+    if value >= 1:
+      resolver.params.put("SpeedLimitCameraValue", str(value), block=True)
+    else:
+      resolver.params.remove("SpeedLimitCameraValue")
+
+  def test_camera_is_car_source(self, mocker):
+    resolver = resolver_class()
+    resolver.policy = Policy.car_state_only
+    sm_mock = setup_sm_mock(mocker)
+    camera_limit = sm_mock['carStateSP'].speedLimit + 20.0
+
+    self._set_camera(resolver, camera_limit)
+    resolver.update(20.0, sm_mock)
+
+    assert resolver.source == SpeedLimitSource.car
+    assert resolver.speed_limit == camera_limit
+    assert resolver.limit_solutions[SpeedLimitSource.car] == camera_limit
+
+  def test_camera_no_value_is_zero_no_dashboard_fallback(self, mocker):
+    resolver = resolver_class()
+    resolver.policy = Policy.car_state_only
+    sm_mock = setup_sm_mock(mocker)
+
+    self._set_camera(resolver, 0.0)
+    resolver.update(20.0, sm_mock)
+
+    assert resolver.source == SpeedLimitSource.car
+    assert resolver.speed_limit == 0.0
+    assert resolver.limit_solutions[SpeedLimitSource.car] == 0.0
