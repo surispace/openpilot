@@ -196,8 +196,10 @@ class SpeedLimitController:
 
     if self.frogpilot_toggles.speed_limit_priority_highest:
       desired_source = max(limits, key=limits.get, default=frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"])
+      desired_target = limits.get(desired_source, 0)
     elif self.frogpilot_toggles.speed_limit_priority_lowest:
       desired_source = min(limits, key=limits.get, default=frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"])
+      desired_target = limits.get(desired_source, 0)
     else:
       priorities = (
         self.frogpilot_toggles.speed_limit_priority1,
@@ -206,9 +208,19 @@ class SpeedLimitController:
         self.frogpilot_toggles.speed_limit_priority4,
       )
 
-      desired_source = next((source for source in priorities if source in limits), frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"])
+      selected_sources = {p for p in priorities if p != frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"]}
 
-    desired_target = limits.get(desired_source, 0)
+      if selected_sources:
+        valid_selected = {s: limits[s] for s in selected_sources if s in limits}
+        if valid_selected:
+          desired_source = min(valid_selected, key=valid_selected.get)
+          desired_target = valid_selected[desired_source]
+        else:
+          desired_source = frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"]
+          desired_target = 0
+      else:
+        desired_source = frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"]
+        desired_target = 0
 
     self.update_mapbox_speed_limit(gps_position, map_match, now, time_validated, v_ego, desired_target)
 
