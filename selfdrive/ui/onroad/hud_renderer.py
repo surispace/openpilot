@@ -31,6 +31,8 @@ class FontSizes:
   speed_unit: int = 66
   max_speed: int = 40
   set_speed: int = 90
+  csc_label: int = 32
+  csc_active: int = 22
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,7 @@ class Colors:
   BORDER_TRANSLUCENT = rl.Color(255, 255, 255, 75)
   HEADER_GRADIENT_START = rl.Color(0, 0, 0, 114)
   HEADER_GRADIENT_END = rl.BLANK
+  CSC_ACTIVE = rl.Color(255, 140, 0, 255)
 
 
 UI_CONFIG = UIConfig()
@@ -166,6 +169,32 @@ class HudRenderer(Widget):
       0,
       set_speed_color,
     )
+
+    # CSC Active indicator next to the UI max speed
+    plan = ui_state.sm["frogpilotPlan"]
+    if plan.cscControllingSpeed and ui_state.frogpilot_toggles.get("csc_status"):
+      csc_text = tr("CSC")
+      csc_text_width = measure_text_cached(self._font_semi_bold, csc_text, FONT_SIZES.csc_label).x
+      active_text = tr("ACTIVE")
+      active_text_width = measure_text_cached(self._font_medium, active_text, FONT_SIZES.csc_active).x
+      csc_x = x + set_speed_width + 16
+      csc_y = y + 45
+      rl.draw_text_ex(
+        self._font_semi_bold,
+        csc_text,
+        rl.Vector2(csc_x, csc_y),
+        FONT_SIZES.csc_label,
+        0,
+        COLORS.WHITE,
+      )
+      rl.draw_text_ex(
+        self._font_medium,
+        active_text,
+        rl.Vector2(csc_x + (csc_text_width - active_text_width) / 2, csc_y + FONT_SIZES.csc_label + 6),
+        FONT_SIZES.csc_active,
+        0,
+        COLORS.CSC_ACTIVE,
+      )
 
   def _draw_current_speed(self, rect: rl.Rectangle) -> None:
     """Draw the current vehicle speed and unit."""
