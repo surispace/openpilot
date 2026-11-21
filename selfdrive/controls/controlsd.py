@@ -210,8 +210,20 @@ class Controls:
 
     hudControl = CC.hudControl
     hudControl.setSpeed = float(CS.vCruiseCluster * CV.KPH_TO_MS)
+
+    # FrogPilot: sync UI/HUD cruise value to SLC target (speed limit + offset /
+    # overridden speed) so the displayed max speed follows the speed limit,
+    # unless CSC is temporarily overriding speed.
+    # Only sync while cruise is engaged AND SLC has an active target; when
+    # slcSpeedLimit is 0, frogpilotPlan.vCruise is stale/stuck and must not
+    # overwrite the driver-set or vEgo-based initialize_v_cruise value.
+    if CC.enabled and self.frogpilot_toggles.speed_limit_controller \
+        and self.sm['frogpilotPlan'].slcSpeedLimit > 0 \
+        and not self.sm['frogpilotPlan'].cscControllingSpeed:
+      hudControl.setSpeed = float(self.sm['frogpilotPlan'].vCruise) * CV.MS_TO_KPH
+
     hudControl.speedVisible = CC.enabled
-    hudControl.lanesVisible = CC.enabled
+    hudControl.lanesVisible = CC.enabled or self.sm['frogpilotCarState'].alwaysOnLateralEnabled
     hudControl.leadVisible = self.sm['longitudinalPlan'].hasLead
     hudControl.leadDistanceBars = self.sm['selfdriveState'].personality.raw + 1
     hudControl.visualAlert = self.sm['selfdriveState'].alertHudVisual

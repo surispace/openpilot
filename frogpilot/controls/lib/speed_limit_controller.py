@@ -15,6 +15,8 @@ MAPBOX_RETRY_DELAY = 10
 
 SPEED_LIMIT_CONFIRMATION_TIMEOUT = 30
 
+SLC_CONFIRMATION_THRESHOLD_MPH = 10
+
 OFFSET_MAP_IMPERIAL = [
   (25, "speed_limit_offset1"),   # 0-24 mph
   (35, "speed_limit_offset2"),   # 25-34
@@ -116,10 +118,14 @@ class SpeedLimitController:
   def handle_limit_change(self, desired_source, desired_target, sm):
     if desired_source == frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"] or self.target == 0:
       confirmation_required = False
-    elif desired_target < self.target:
-      confirmation_required = self.frogpilot_toggles.speed_limit_confirmation_lower
+    elif abs(desired_target - self.target) > SLC_CONFIRMATION_THRESHOLD_MPH * CV.MPH_TO_MS:
+      confirmation_required = (
+        self.frogpilot_toggles.speed_limit_confirmation_lower
+        if desired_target < self.target
+        else self.frogpilot_toggles.speed_limit_confirmation_higher
+      )
     else:
-      confirmation_required = self.frogpilot_toggles.speed_limit_confirmation_higher
+      confirmation_required = False
 
     speed_limit_accepted = self.frogpilot_planner.speed_limit_accepted
     speed_limit_accepted |= self.frogpilot_planner.accel_pressed and sm["carControl"].longActive

@@ -1,0 +1,51 @@
+# Python
+*.py[cod]
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
++.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
++.hypothesis/
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+__pycache__
+
+# C extensions
+*.so
+
+# Virtualenvs
+.env
+.venv
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Logs
+*.log
+
+# Kilo configs
+.kilo/

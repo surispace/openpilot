@@ -63,9 +63,14 @@ class FrogPilotVCruise:
       self.slc_offset = 0
       self.slc_target = 0
 
-    targets = [self.csc_target, v_cruise]
+    slc_value = v_cruise
     if frogpilot_toggles.speed_limit_controller and self.slc_target > 0:
-      targets.append(max(max(self.slc.overridden_speed, self.slc_target + self.slc_offset) - v_ego_diff, frogpilot_variables.CRUISING_SPEED))
+      slc_value = max(max(self.slc.overridden_speed, self.slc_target + self.slc_offset) - v_ego_diff, frogpilot_variables.CRUISING_SPEED)
+
+    targets = [slc_value]
+
+    if self.csc_active and self.csc_target < slc_value:
+      targets.append(self.csc_target)
 
     taco_target = v_cruise
     if long_control_active and frogpilot_toggles.taco_tune and not frogpilot_toggles.curve_speed_controller:
