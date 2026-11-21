@@ -24,7 +24,7 @@ class AlwaysOnLateral:
     self.waiting &= self.has_cruise_main
     self.waiting &= not (CP.carName == "hyundai" and CP.openpilotLongitudinalControl)
 
-    self.cruise_main_prev = self.waiting
+    self.cruise_main_prev = False
 
     if frogpilot_toggles.always_on_lateral:
       CP.alternativeExperience |= ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL
