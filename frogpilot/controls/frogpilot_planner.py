@@ -240,7 +240,7 @@ class FrogPilotPlanner:
     frogpilotPlan.slcMapSpeedLimit = self.frogpilot_vcruise.slc.map_speed_limit
     frogpilotPlan.slcNextSpeedLimit = self.frogpilot_vcruise.slc.next_speed_limit
     frogpilotPlan.slcOverriddenSpeed = self.frogpilot_vcruise.slc.overridden_speed
-    frogpilotPlan.slcSpeedLimit = self.frogpilot_vcruise.slc_target
+    frogpilotPlan.slcSpeedLimit = self.frogpilot_vcruise.slc.unconfirmed_speed_limit if sm["controlsState"].enabled and self.frogpilot_vcruise.slc.unconfirmed_speed_limit > 0 else self.frogpilot_vcruise.slc_target
     frogpilotPlan.slcSpeedLimitOffset = self.frogpilot_vcruise.slc_offset
     frogpilotPlan.slcSpeedLimitSource = self.frogpilot_vcruise.slc.source
     frogpilotPlan.speedLimitChanged = self.frogpilot_vcruise.slc.speed_limit_changed_timer > DT_MDL
