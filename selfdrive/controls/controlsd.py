@@ -172,6 +172,7 @@ class Controls:
     self.experimental_mode = False
     self.personality = self.read_personality_param()
     self.v_cruise_helper = VCruiseHelper(self.CP)
+    self.slc_limit_kph_prev = 0.0
     self.recalibrating_seen = False
 
     self.can_log_mono_time = 0
@@ -618,9 +619,20 @@ class Controls:
     # Only sync while cruise is engaged AND SLC has an active target; when
     # slc_target is 0, frogpilotPlan.vCruise is stale/stuck and must not
     # overwrite the driver-set or vEgo-based initialize_v_cruise value.
+    slc_limit_kph = (self.sm['frogpilotPlan'].slcSpeedLimit + self.sm['frogpilotPlan'].slcSpeedLimitOffset) * CV.MS_TO_KPH
+    driver_deviated = abs(self.v_cruise_helper.v_cruise_kph - slc_limit_kph) > 0.1
+    slc_limit_changed = abs(slc_limit_kph - self.slc_limit_kph_prev) > 0.1 and self.slc_limit_kph_prev > 0.0
+    unconfirmed = self.sm['frogpilotPlan'].unconfirmedSlcSpeedLimit > 0
+    # Skip wipe when driver deviated AND (pending confirmation OR deny = limit unchanged).
+    # Accept changes slcSpeedLimit (slc_limit_changed=True) → wipe applies new limit.
+    skip_wipe = driver_deviated and (unconfirmed or not slc_limit_changed)
+    # Only track confirmed limit so accept (slc_limit_changed flips True) triggers the wipe.
+    if not unconfirmed:
+      self.slc_limit_kph_prev = slc_limit_kph
     if self.enabled and self.frogpilot_toggles.speed_limit_controller \
         and self.sm['frogpilotPlan'].slcSpeedLimit > 0 \
-        and not self.sm['frogpilotPlan'].cscControllingSpeed:
+        and not self.sm['frogpilotPlan'].cscControllingSpeed \
+        and not skip_wipe:
       self.v_cruise_helper.v_cruise_kph = float(self.sm['frogpilotPlan'].vCruise) * CV.MS_TO_KPH
       self.v_cruise_helper.v_cruise_cluster_kph = self.v_cruise_helper.v_cruise_kph
 

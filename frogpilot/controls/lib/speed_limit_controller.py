@@ -108,6 +108,9 @@ class SpeedLimitController:
 
     self.source = frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"]
 
+    self.frogpilot_planner.frogpilot_vcruise.driver_override_active = False
+    self.frogpilot_planner.frogpilot_vcruise.v_cruise_prev = 0.0
+
     self.invalidate_mapbox()
 
   @property
@@ -132,6 +135,8 @@ class SpeedLimitController:
       frogpilot_variables.params.put_bool_nonblocking("ExperimentalMode", True)
 
   def handle_limit_change(self, desired_source, desired_target, sm):
+    driver_override_active = self.frogpilot_planner.frogpilot_vcruise.driver_override_active
+
     if desired_source == frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"] or self.target == 0:
       confirmation_required = False
     elif abs(desired_target - self.target) > SLC_CONFIRMATION_THRESHOLD_MPH * CV.MPH_TO_MS:
@@ -142,6 +147,9 @@ class SpeedLimitController:
       )
     else:
       confirmation_required = False
+
+    if (not confirmation_required) and driver_override_active and desired_source != frogpilot_variables.SPEED_LIMIT_SOURCES["NONE"] and self.target != 0 and desired_target != self.target:
+      confirmation_required = True
 
     speed_limit_accepted = self.speed_limit_accepted
     speed_limit_accepted |= self.frogpilot_planner.accel_pressed and sm["carControl"].longActive
@@ -180,6 +188,8 @@ class SpeedLimitController:
 
       self.speed_limit_changed_timer = 0
       self.unconfirmed_speed_limit = 0
+
+      self.frogpilot_planner.frogpilot_vcruise.driver_override_active = False
 
     elif self.frogpilot_planner.decel_pressed or self.speed_limit_changed_timer >= SPEED_LIMIT_CONFIRMATION_TIMEOUT:
       self.denied_target = desired_target

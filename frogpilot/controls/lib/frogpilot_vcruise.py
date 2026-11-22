@@ -25,6 +25,9 @@ class FrogPilotVCruise:
     self.force_stop_timer = 0
     self.stop_distance = 0
 
+    self.driver_override_active = False
+    self.v_cruise_prev = 0.0
+
   def update(self, gps_position, map_match, now, time_validated, v_cruise, v_ego, sm, frogpilot_toggles):
     self.update_force_stop(v_ego, sm, frogpilot_toggles)
 
@@ -66,7 +69,23 @@ class FrogPilotVCruise:
 
     slc_value = v_cruise
     if frogpilot_toggles.speed_limit_controller and self.slc_target > 0:
-      slc_value = max(max(self.slc.overridden_speed, self.slc_target + self.slc_offset), frogpilot_variables.CRUISING_SPEED)
+      slc_candidate = max(max(self.slc.overridden_speed, self.slc_target + self.slc_offset), frogpilot_variables.CRUISING_SPEED)
+
+      confirmation_pending = self.slc.unconfirmed_speed_limit > 0
+      v_cruise_changed = abs(v_cruise - self.v_cruise_prev) > 0.03
+      self.v_cruise_prev = v_cruise
+      cruise_active = sm["controlsState"].enabled
+      pcm_active = sm["carState"].cruiseState.available
+
+      # Only LATCH override (set True) when driver deviates — never clear here
+      if cruise_active and not pcm_active and not confirmation_pending and v_cruise_changed \
+          and abs(v_cruise - slc_candidate) > 0.03:
+        self.driver_override_active = True
+
+      slc_value = v_cruise if self.driver_override_active else slc_candidate
+    else:
+      self.driver_override_active = False
+      self.v_cruise_prev = 0.0
 
     targets = [slc_value]
 
