@@ -369,6 +369,29 @@ def forcing_stop_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMas
     Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 1.)
 
 
+def speed_limit_changed_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
+  limit_ms = sm["frogpilotPlan"].slcSpeedLimit
+  if limit_ms <= 0:
+    return Alert(
+      "",
+      "",
+      AlertStatus.normal, AlertSize.none,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 3.)
+  speed_str = get_display_speed(limit_ms, metric)
+  unconfirmed_ms = sm["frogpilotPlan"].unconfirmedSlcSpeedLimit
+  if unconfirmed_ms > 0:
+    return Alert(
+      f"Press '+' to accept {speed_str}, '-' to Deny",
+      "",
+      FrogPilotAlertStatus.frogpilot, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 3.)
+  return Alert(
+    f"Speed Limit Changed {speed_str}",
+    "",
+    FrogPilotAlertStatus.frogpilot, AlertSize.small,
+    Priority.LOW, VisualAlert.none, AudibleAlert.none, 3.)
+
+
 def holiday_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int, frogpilot_toggles: SimpleNamespace) -> Alert:
   return Alert(
     frogpilot_toggles.holiday_greeting,
@@ -1169,11 +1192,7 @@ FROGPILOT_EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   FrogPilotEventName.speedLimitChanged: {
-    ET.PERMANENT: Alert(
-      "Speed limit changed",
-      "",
-      FrogPilotAlertStatus.frogpilot, AlertSize.small,
-      Priority.LOW, VisualAlert.none, AudibleAlert.prompt, 3.),
+    ET.PERMANENT: speed_limit_changed_alert,
   },
 
   FrogPilotEventName.speedSensorsDisagree: {

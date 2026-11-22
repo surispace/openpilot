@@ -611,6 +611,19 @@ class Controls:
     # Check if openpilot is engaged and actuators are enabled
     self.enabled = self.state in ENABLED_STATES
     self.active = self.state in ACTIVE_STATES
+
+    # FrogPilot: sync UI/HUD cruise value to SLC target (speed limit + offset /
+    # overridden speed) so the displayed max speed follows the speed limit,
+    # unless CSC is temporarily overriding speed (icon shown instead).
+    # Only sync while cruise is engaged AND SLC has an active target; when
+    # slc_target is 0, frogpilotPlan.vCruise is stale/stuck and must not
+    # overwrite the driver-set or vEgo-based initialize_v_cruise value.
+    if self.enabled and self.frogpilot_toggles.speed_limit_controller \
+        and self.sm['frogpilotPlan'].slcSpeedLimit > 0 \
+        and not self.sm['frogpilotPlan'].cscControllingSpeed:
+      self.v_cruise_helper.v_cruise_kph = float(self.sm['frogpilotPlan'].vCruise) * CV.MS_TO_KPH
+      self.v_cruise_helper.v_cruise_cluster_kph = self.v_cruise_helper.v_cruise_kph
+
     if self.active or self.sm['frogpilotCarState'].alwaysOnLateralEnabled:
       self.current_alert_types.append(ET.WARNING)
 

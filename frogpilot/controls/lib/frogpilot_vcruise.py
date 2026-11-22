@@ -31,7 +31,6 @@ class FrogPilotVCruise:
     v_cruise_cluster = max(sm["controlsState"].vCruiseCluster * CV.KPH_TO_MS, v_cruise)
 
     v_ego_cluster = max(sm["carState"].vEgoCluster, v_ego)
-    v_ego_diff = v_ego_cluster - v_ego
 
     # FrogsGoMoo's Curve Speed Controller
     self.csc.profile_learner.update(sm["carControl"].longActive, sm)
@@ -65,9 +64,14 @@ class FrogPilotVCruise:
       self.slc_offset = 0
       self.slc_target = 0
 
-    targets = [self.csc_target, v_cruise]
+    slc_value = v_cruise
     if frogpilot_toggles.speed_limit_controller and self.slc_target > 0:
-      targets.append(max(max(self.slc.overridden_speed, self.slc_target + self.slc_offset) - v_ego_diff, frogpilot_variables.CRUISING_SPEED))
+      slc_value = max(max(self.slc.overridden_speed, self.slc_target + self.slc_offset), frogpilot_variables.CRUISING_SPEED)
+
+    targets = [slc_value]
+
+    if self.csc_active and self.csc_target < slc_value:
+      targets.append(self.csc_target)
 
     taco_target = v_cruise
     if sm["carControl"].longActive and frogpilot_toggles.taco_tune and not frogpilot_toggles.curve_speed_controller:
