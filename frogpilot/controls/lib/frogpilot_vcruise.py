@@ -75,10 +75,9 @@ class FrogPilotVCruise:
       v_cruise_changed = abs(v_cruise - self.v_cruise_prev) > 0.03
       self.v_cruise_prev = v_cruise
       cruise_active = sm["controlsState"].enabled
-      pcm_active = sm["carState"].cruiseState.available
 
       # Only LATCH override (set True) when driver deviates — never clear here
-      if cruise_active and not pcm_active and not confirmation_pending and v_cruise_changed \
+      if cruise_active and not confirmation_pending and v_cruise_changed \
           and abs(v_cruise - slc_candidate) > 0.03:
         self.driver_override_active = True
 

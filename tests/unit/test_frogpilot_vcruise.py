@@ -44,7 +44,6 @@ _fc.frogpilot_variables = _fvp
 sys.modules["openpilot.frogpilot.common"] = _fc
 
 from openpilot.common.conversions import Conversions as CV
-from openpilot.selfdrive.controls.lib.drive_helpers import ButtonType
 from openpilot.frogpilot.controls.lib.frogpilot_vcruise import FrogPilotVCruise
 
 
@@ -94,20 +93,7 @@ def _call_update(vc, v_cruise_ms, v_ego_ms=10, slc_target_ms=55 * CV.MPH_TO_MS,
   sm["carControl"].longActive = True
   sm["carState"].vEgoCluster = v_ego_ms
   sm["controlsState"].vCruiseCluster = v_cruise_ms / CV.KPH_TO_MS
-  sm["carState"].cruiseState.available = False  # PCM inactive by default
   sm.alive = {}
-
-  # Simulate button press events for accel/decel cruise
-  button_events = []
-  if accel:
-    be = MagicMock()
-    be.type = ButtonType.accelCruise
-    button_events.append(be)
-  if decel:
-    be = MagicMock()
-    be.type = ButtonType.decelCruise
-    button_events.append(be)
-  sm["carState"].buttonEvents = button_events
 
   gps = None
   map_match = {}
@@ -246,39 +232,6 @@ def test_button_pressed_and_deviation_latches_override():
     "button press with deviation should latch override"
 
 
-def test_no_override_when_pcm_active():
-  """PCM controls speed (cruiseState.available=True) -> NO override even if v_cruise deviates."""
-  vc = _make_vcruise()
-  sm = MagicMock()
-  sm["carControl"].longActive = True
-  sm["carState"].vEgoCluster = 60 * CV.MPH_TO_MS / CV.KPH_TO_MS
-  sm["controlsState"].vCruiseCluster = 60 * CV.MPH_TO_MS / CV.KPH_TO_MS
-  sm["carState"].cruiseState.available = True  # PCM is controlling speed
-  sm.alive = {}
-  toggles = MagicMock()
-  toggles.speed_limit_controller = True
-  toggles.curve_speed_controller = False
-  toggles.taco_tune = False
-  toggles.is_metric = False
-  vc.frogpilot_toggles = toggles
-  import datetime
-  vc.update(None, {}, datetime.datetime.now(), True,
-            60 * CV.MPH_TO_MS, 10 * CV.MPH_TO_MS, sm, vc.frogpilot_toggles)
-  assert vc.driver_override_active is False, \
-    "PCM controlling speed should not latch override even when v_cruise deviates from slc_candidate"
-
-
-def test_override_latches_when_pcm_inactive_and_driver_deviates():
-  """PCM inactive + driver deviates -> override latched."""
-  vc = _make_vcruise()
-  vc = _call_update(vc, 55 * CV.MPH_TO_MS, slc_target_ms=55 * CV.MPH_TO_MS)
-  assert vc.driver_override_active is False
-  # PCM inactive, driver deviates to 60 MPH
-  vc = _call_update(vc, 60 * CV.MPH_TO_MS, slc_target_ms=55 * CV.MPH_TO_MS)
-  assert vc.driver_override_active is True, \
-    "PCM inactive + driver deviation should latch override"
-
-
 if __name__ == "__main__":
   test_override_latches_when_driver_goes_above_limit()
   test_override_latches_when_driver_goes_below_limit()
@@ -291,6 +244,4 @@ if __name__ == "__main__":
   test_no_override_when_cruise_not_active()
   test_no_override_without_deviation()
   test_button_pressed_and_deviation_latches_override()
-  test_no_override_when_pcm_active()
-  test_override_latches_when_pcm_inactive_and_driver_deviates()
   print("All frogpilot_vcruise tests passed.")
